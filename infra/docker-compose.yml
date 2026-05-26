@@ -7,18 +7,25 @@ services:
       POSTGRES_DB: zooot
     ports: ["5432:5432"]
     volumes: ["pg_data:/var/lib/postgresql/data"]
+
   redis:
     image: redis:7
     ports: ["6379:6379"]
+
   backend-api:
     image: node:22
     working_dir: /app
     volumes:
       - ../backend-api:/app
-    command: sh -c "npm install && npm run dev"
-    env_file:
-      - ../backend-api/.env.example
+    command: sh -c "npm install && npm run db:migrate && npm run db:seed && npm run dev"
+    environment:
+      DATABASE_URL: postgres://zooot:zooot@postgres:5432/zooot
+      REDIS_URL: redis://redis:6379
+      PORT: 8080
+      JWT_SECRET: dev-secret
+      JWT_REFRESH_SECRET: dev-refresh
     ports: ["8080:8080"]
     depends_on: [postgres, redis]
+
 volumes:
   pg_data:

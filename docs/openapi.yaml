@@ -1,27 +1,46 @@
 openapi: 3.0.3
 info:
   title: Zooot VPN API
-  version: 0.1.0
-servers:
-  - url: https://api.zooot.example
+  version: 0.2.0
 paths:
   /api/v1/auth/register:
     post:
       summary: Register user
+      requestBody:
+        required: true
       responses:
         '201': { description: Created }
+        '400': { description: VALIDATION_ERROR }
+        '409': { description: USER_ALREADY_EXISTS }
   /api/v1/auth/login:
     post:
-      summary: Login
+      summary: Login user
       responses:
         '200': { description: OK }
+        '400': { description: VALIDATION_ERROR }
+        '401': { description: INVALID_CREDENTIALS }
   /api/v1/config/resolve-token:
     post:
-      summary: Resolve zoootconf token
+      summary: Resolve config token with subscription and servers
       responses:
         '200': { description: Resolved }
+        '400': { description: VALIDATION_ERROR }
+        '403': { description: SUBSCRIPTION_INACTIVE }
+        '404': { description: CONFIG_TOKEN_NOT_FOUND }
   /api/v1/servers/recommended:
     get:
-      summary: Get recommended server/protocol
+      summary: Get online recommended servers and healthy protocols
       responses:
         '200': { description: OK }
+components:
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
