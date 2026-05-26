@@ -1,7 +1,7 @@
 # Zooot Android Client (MVP skeleton)
 
 ## What is included
-- MainActivity with simple XML-free TextView UI and fake connect flow.
+- MainActivity with simple Android Views UI, config details, and fake connect flow.
 - Deep link parsing for `zoootconf://TOKEN` and `zoootconf://connect?token=TOKEN`.
 - Token resolve against backend `http://31.59.45.197:8080`.
 - ProtocolSelector server/protocol pick.
@@ -38,3 +38,15 @@ adb shell am start -a android.intent.action.VIEW -d "zoootconf://demo-token"
 
 ## Debug backend for testing
 `http://31.59.45.197:8080`
+
+
+## Expected MVP UI after deep link
+- Backend URL: `http://31.59.45.197:8080`
+- Deep link: `zoootconf://demo-token`
+- Email: `demo@zooot.local`
+- Tariff: `Demo Monthly`
+- Country: `DE`
+- City: `Frankfurt`
+- Protocol: `amneziawg`
+- Status: `ReadyToConnect` (or `Connected` after pressing Connect)
+- Buttons: `Load config`, `Connect`, `Disconnect`, `Retry`
