@@ -1,23 +1,22 @@
 package com.zooot.vpn
 
-import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
 import com.zooot.vpn.api.ResolveTokenResult
 import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.deeplink.DeepLinkParser
 import com.zooot.vpn.selector.NetworkType
 import com.zooot.vpn.selector.ProtocolSelector
-import com.zooot.vpn.selector.ServerCandidate
 import com.zooot.vpn.selector.Selection
 import com.zooot.vpn.vpn.protocol.FakeVpnProtocolAdapter
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
     private lateinit var backendUrlInput: EditText
     private lateinit var tokenValue: TextView
     private lateinit var emailValue: TextView
@@ -26,89 +25,67 @@ class MainActivity : Activity() {
     private lateinit var cityValue: TextView
     private lateinit var serverIpValue: TextView
     private lateinit var protocolValue: TextView
-    private lateinit var statusValue: TextView
+    private lateinit var statusBadge: TextView
+    private lateinit var errorCard: MaterialCardView
     private lateinit var errorValue: TextView
 
     private var currentToken: String = ""
     private var currentBackendUrl: String = ""
     private var currentSelection: Selection? = null
-    private var currentResult: ResolveTokenResult? = null
     private var lastLoadFailed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        bindViews()
 
         currentBackendUrl = readBackendUrl()
-        setContentView(buildUi())
         backendUrlInput.setText(currentBackendUrl)
-
-        currentToken = DeepLinkParser.extractToken(intent?.dataString.orEmpty()).orEmpty()
-        tokenValue.text = currentToken.ifBlank { "none" }
-
-        if (currentToken.isNotBlank()) {
-            loadConfig(auto = true)
-        } else {
-            updateStatus("Ready")
-        }
-    }
-
-    private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-        }
-
-        fun label(name: String): TextView = TextView(this).apply { text = name }
-        fun value(default: String = "-"): TextView = TextView(this).apply { text = default }
-
-        root.addView(TextView(this).apply { text = "Zooot VPN"; textSize = 24f })
-        root.addView(label("Backend URL"))
-        backendUrlInput = EditText(this)
-        root.addView(backendUrlInput)
-
-        val saveUrlButton = Button(this).apply {
-            text = "Save URL"
-            setOnClickListener {
-                val input = backendUrlInput.text.toString().trim()
-                if (input.isNotBlank()) {
-                    currentBackendUrl = input
-                    saveBackendUrl(input)
-                }
+        findViewById<MaterialButton>(R.id.saveUrlButton).setOnClickListener {
+            val input = backendUrlInput.text.toString().trim()
+            if (input.isNotBlank()) {
+                currentBackendUrl = input
+                saveBackendUrl(input)
             }
         }
-        root.addView(saveUrlButton)
 
-        root.addView(label("Token")); tokenValue = value(); root.addView(tokenValue)
-        root.addView(label("User email")); emailValue = value(); root.addView(emailValue)
-        root.addView(label("Tariff title")); tariffValue = value(); root.addView(tariffValue)
-        root.addView(label("Country")); countryValue = value(); root.addView(countryValue)
-        root.addView(label("City")); cityValue = value(); root.addView(cityValue)
-        root.addView(label("Server IP")); serverIpValue = value(); root.addView(serverIpValue)
-        root.addView(label("Selected protocol")); protocolValue = value(); root.addView(protocolValue)
-        root.addView(label("Connection status")); statusValue = value("Ready"); root.addView(statusValue)
-        root.addView(label("Error")); errorValue = value(); root.addView(errorValue)
+        findViewById<MaterialButton>(R.id.loadConfigButton).setOnClickListener { loadConfig(auto = false) }
+        findViewById<MaterialButton>(R.id.connectButton).setOnClickListener { connect() }
+        findViewById<MaterialButton>(R.id.disconnectButton).setOnClickListener { disconnect() }
+        findViewById<MaterialButton>(R.id.retryButton).setOnClickListener { if (lastLoadFailed) loadConfig(auto = false) }
 
-        root.addView(Button(this).apply { text = "Load config"; setOnClickListener { loadConfig(auto = false) } })
-        root.addView(Button(this).apply { text = "Connect"; setOnClickListener { connect() } })
-        root.addView(Button(this).apply { text = "Disconnect"; setOnClickListener { disconnect() } })
-        root.addView(Button(this).apply { text = "Retry"; setOnClickListener { if (lastLoadFailed) loadConfig(auto = false) } })
-        return root
+        currentToken = DeepLinkParser.extractToken(intent?.dataString.orEmpty()).orEmpty()
+        tokenValue.text = readable(currentToken)
+
+        if (currentToken.isNotBlank()) loadConfig(auto = true) else updateStatus("Ready")
+        clearError()
+    }
+
+    private fun bindViews() {
+        backendUrlInput = findViewById(R.id.backendUrlInput)
+        tokenValue = findViewById(R.id.tokenValue)
+        emailValue = findViewById(R.id.emailValue)
+        tariffValue = findViewById(R.id.tariffValue)
+        countryValue = findViewById(R.id.countryValue)
+        cityValue = findViewById(R.id.cityValue)
+        serverIpValue = findViewById(R.id.serverIpValue)
+        protocolValue = findViewById(R.id.protocolValue)
+        statusBadge = findViewById(R.id.statusBadge)
+        errorCard = findViewById(R.id.errorCard)
+        errorValue = findViewById(R.id.errorValue)
+        render(UiState("", "", "", "", "", ""))
     }
 
     private fun loadConfig(auto: Boolean) {
-        if (currentToken.isBlank()) {
-            showError("Invalid token")
-            return
-        }
+        if (currentToken.isBlank()) return showError("Invalid token")
         updateStatus("Loading")
         clearError()
-
         Thread {
             try {
                 val result = ZootApiClient.resolveToken(currentToken, currentBackendUrl)
-                val mapping = mapConfig(result)
+                val state = mapConfig(result)
                 runOnUiThread {
-                    render(mapping)
+                    render(state)
                     updateStatus(if (auto) "ReadyToConnect" else "ReadyToConnect")
                     lastLoadFailed = false
                 }
@@ -123,10 +100,7 @@ class MainActivity : Activity() {
     }
 
     private fun connect() {
-        currentSelection ?: run {
-            showError("No healthy protocols")
-            return
-        }
+        currentSelection ?: return showError("No healthy protocols")
         FakeVpnProtocolAdapter().start(currentSelection!!.configUrl)
         updateStatus("Connected")
         clearError()
@@ -144,25 +118,46 @@ class MainActivity : Activity() {
         val server = result.servers.firstOrNull { it.serverId == selection.serverId }
             ?: throw IllegalStateException("No servers available")
         currentSelection = selection
-        currentResult = result
-
         return UiState(
-            email = result.userEmail.ifBlank { "demo@zooot.local" },
-            tariff = result.tariffTitle.ifBlank { "Demo Monthly" },
-            country = server.country,
-            city = server.city.ifBlank { "Frankfurt" },
-            serverIp = server.serverIp,
-            protocol = selection.protocol.name.lowercase()
+            result.userEmail.ifBlank { "demo@zooot.local" },
+            result.tariffTitle.ifBlank { "Demo Monthly" },
+            server.country,
+            server.city.ifBlank { "Frankfurt" },
+            server.serverIp,
+            selection.protocol.name.lowercase()
         )
     }
 
     private fun render(state: UiState) {
-        emailValue.text = state.email
-        tariffValue.text = state.tariff
-        countryValue.text = state.country
-        cityValue.text = state.city
-        serverIpValue.text = state.serverIp
-        protocolValue.text = state.protocol
+        emailValue.text = readable(state.email)
+        tariffValue.text = readable(state.tariff)
+        countryValue.text = readable(state.country)
+        cityValue.text = readable(state.city)
+        serverIpValue.text = readable(state.serverIp)
+        protocolValue.text = readable(state.protocol)
+    }
+
+    private fun readable(value: String): String = value.ifBlank { getString(R.string.empty_value) }
+
+    private fun updateStatus(status: String) {
+        statusBadge.text = status
+        when (status) {
+            "Connected" -> statusBadge.setTextColor(getColor(R.color.success))
+            "Disconnected" -> statusBadge.setTextColor(getColor(R.color.neutral))
+            "Error" -> statusBadge.setTextColor(getColor(R.color.error))
+            else -> statusBadge.setTextColor(getColor(R.color.primary))
+        }
+        statusBadge.setBackgroundResource(R.drawable.field_background)
+    }
+
+    private fun showError(message: String) {
+        errorCard.visibility = View.VISIBLE
+        errorValue.text = message
+    }
+
+    private fun clearError() {
+        errorValue.text = getString(R.string.empty_value)
+        errorCard.visibility = View.GONE
     }
 
     private fun mapErrorMessage(raw: String): String {
@@ -185,10 +180,6 @@ class MainActivity : Activity() {
     private fun saveBackendUrl(url: String) {
         getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE).edit().putString("backend_url", url).apply()
     }
-
-    private fun updateStatus(status: String) { statusValue.text = status }
-    private fun showError(message: String) { errorValue.text = message }
-    private fun clearError() { errorValue.text = "-" }
 }
 
 data class UiState(

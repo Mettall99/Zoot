@@ -1,4 +1,8 @@
 <resources>
-    <style name="Theme.Zooot" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Zooot" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primaryDark</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="android:statusBarColor">@color/surfaceBackground</item>
+    </style>
 </resources>
-
