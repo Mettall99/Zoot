@@ -1,0 +1,23 @@
+﻿# IDE
+.idea/
+*.iml
+android-client/.idea/
+
+# Gradle / Android local
+.gradle/
+**/.gradle/
+**/build/
+android-client/build/
+android-client/app/build/
+android-client/local.properties
+
+# Do not commit Gradle wrapper from local machine for now
+android-client/gradle/
+android-client/gradlew
+android-client/gradlew.bat
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+.next/
