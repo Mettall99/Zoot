@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "tsx src/main.ts",
     "test": "vitest run",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "db:migrate": "psql \"\" -f migrations/001_init.sql -f migrations/002_backend_flow.sql -f migrations/003_auth_password_hash.sql",
+    "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
     "argon2": "^0.41.1",
@@ -14,7 +16,8 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
