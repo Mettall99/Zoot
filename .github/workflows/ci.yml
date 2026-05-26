@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        working-directory: backend-api
+        run: npm install
+      - name: Build backend
+        working-directory: backend-api
+        run: npm run build
+      - name: Test backend
+        working-directory: backend-api
+        run: npm test
+
+  admin-panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install admin dependencies
+        working-directory: admin-panel
+        run: npm install
+      - name: Build admin panel
+        working-directory: admin-panel
+        run: npm run build
+
+  android-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Android project structure
+        run: |
+          test -f android-client/settings.gradle.kts
+          test -f android-client/build.gradle.kts
+          test -f android-client/app/build.gradle.kts
+          test -f android-client/app/src/main/AndroidManifest.xml
+          test -f android-client/app/src/main/java/com/zooot/vpn/MainActivity.kt
+          test -f android-client/app/src/main/java/com/zooot/vpn/deeplink/DeepLinkParser.kt
+          test -f android-client/app/src/main/java/com/zooot/vpn/selector/ProtocolSelector.kt
+          test -f android-client/app/src/main/java/com/zooot/vpn/vpn/ZootVpnService.kt
