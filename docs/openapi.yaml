@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info:
+  title: Zooot VPN API
+  version: 0.1.0
+servers:
+  - url: https://api.zooot.example
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Register user
+      responses:
+        '201': { description: Created }
+  /api/v1/auth/login:
+    post:
+      summary: Login
+      responses:
+        '200': { description: OK }
+  /api/v1/config/resolve-token:
+    post:
+      summary: Resolve zoootconf token
+      responses:
+        '200': { description: Resolved }
+  /api/v1/servers/recommended:
+    get:
+      summary: Get recommended server/protocol
+      responses:
+        '200': { description: OK }

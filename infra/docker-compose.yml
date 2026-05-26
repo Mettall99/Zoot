@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: zooot
+      POSTGRES_PASSWORD: zooot
+      POSTGRES_DB: zooot
+    ports: ["5432:5432"]
+    volumes: ["pg_data:/var/lib/postgresql/data"]
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+  backend-api:
+    image: node:22
+    working_dir: /app
+    volumes:
+      - ../backend-api:/app
+    command: sh -c "npm install && npm run dev"
+    env_file:
+      - ../backend-api/.env.example
+    ports: ["8080:8080"]
+    depends_on: [postgres, redis]
+volumes:
+  pg_data:

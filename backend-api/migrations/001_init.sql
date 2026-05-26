@@ -1,0 +1,45 @@
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tariffs (
+  id UUID PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  device_limit INT NOT NULL,
+  price_cents INT NOT NULL,
+  period_days INT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id),
+  tariff_id UUID NOT NULL REFERENCES tariffs(id),
+  status TEXT NOT NULL,
+  starts_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS servers (
+  id UUID PRIMARY KEY,
+  name TEXT NOT NULL,
+  country_code TEXT NOT NULL,
+  city TEXT NOT NULL,
+  ip INET NOT NULL,
+  status TEXT NOT NULL,
+  load_percent INT NOT NULL DEFAULT 0,
+  max_users INT NOT NULL DEFAULT 0,
+  active_users INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS protocols (
+  id UUID PRIMARY KEY,
+  type TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  default_priority INT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
