@@ -1,4 +1,40 @@
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" />
-</resources>
+    <style name="LabelTitle">
+        <item name="android:textColor">@color/textPrimary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+    <style name="LabelRow">
+        <item name="android:textColor">@color/textSecondary</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:layout_marginTop">12dp</item>
+    </style>
+    <style name="ValueRow">
+        <item name="android:textColor">@color/textPrimary</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
 
+    <style name="Widget.Zooot.Button.Base" parent="Widget.MaterialComponents.Button">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Zooot.Button</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+    <style name="Widget.Zooot.Button.Primary" parent="Widget.Zooot.Button.Base">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+    <style name="Widget.Zooot.Button.Secondary" parent="Widget.Zooot.Button.Base">
+        <item name="backgroundTint">#E2E8F0</item>
+        <item name="android:textColor">@color/textPrimary</item>
+    </style>
+    <style name="Widget.Zooot.Button.OutlinedDanger" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Zooot.Button</item>
+        <item name="strokeColor">@color/error</item>
+        <item name="android:textColor">@color/error</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+    <style name="ShapeAppearance.Zooot.Button">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/button_radius</item>
+    </style>
+</resources>

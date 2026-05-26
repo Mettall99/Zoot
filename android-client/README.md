@@ -50,3 +50,10 @@ adb shell am start -a android.intent.action.VIEW -d "zoootconf://demo-token"
 - Protocol: `amneziawg`
 - Status: `ReadyToConnect` (or `Connected` after pressing Connect)
 - Buttons: `Load config`, `Connect`, `Disconnect`, `Retry`
+
+
+## Modern MVP test UI
+- Header with **status badge** (Ready / ReadyToConnect / Connected / Disconnected / Error).
+- Rounded **summary cards** for backend and connection data.
+- **Editable backend URL** with compact Save action.
+- Modern action layout: primary **Connect**, plus secondary Load config / Retry and outlined Disconnect.

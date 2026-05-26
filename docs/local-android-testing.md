@@ -40,3 +40,10 @@ After opening `zoootconf://demo-token` and successful config load:
 - city: `Frankfurt`
 - selected protocol: `amneziawg`
 - status: `ReadyToConnect` (or `Connected` after pressing Connect)
+
+
+## Modern MVP test UI
+- Header with **status badge** (Ready / ReadyToConnect / Connected / Disconnected / Error).
+- Rounded **summary cards** for backend and connection data.
+- **Editable backend URL** with compact Save action.
+- Modern action layout: primary **Connect**, plus secondary Load config / Retry and outlined Disconnect.

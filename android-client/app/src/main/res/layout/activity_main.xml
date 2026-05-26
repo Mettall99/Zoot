@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surfaceBackground"
+    android:fillViewport="true">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="@dimen/space_lg">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/app_title" android:textColor="@color/textPrimary" android:textSize="32sp" android:textStyle="bold"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_xs" android:text="@string/subtitle" android:textColor="@color/textSecondary" android:textSize="14sp"/>
+        <TextView android:id="@+id/statusBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_md" android:paddingStart="@dimen/space_md" android:paddingTop="@dimen/space_xs" android:paddingEnd="@dimen/space_md" android:paddingBottom="@dimen/space_xs" android:textStyle="bold" />
+
+        <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_lg" app:cardBackgroundColor="@color/cardBackground" app:cardCornerRadius="@dimen/card_radius" app:cardElevation="0dp" app:strokeColor="@color/cardStroke" app:strokeWidth="1dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="@dimen/space_md">
+                <TextView style="@style/LabelTitle" android:text="@string/backend_url"/>
+                <EditText android:id="@+id/backendUrlInput" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_sm" android:background="@drawable/field_background" android:padding="@dimen/space_sm" android:singleLine="true" android:textColor="@color/textPrimary"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/saveUrlButton" style="@style/Widget.Zooot.Button.Secondary" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_sm" android:text="@string/save"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_md" app:cardBackgroundColor="@color/cardBackground" app:cardCornerRadius="@dimen/card_radius" app:cardElevation="0dp" app:strokeColor="@color/cardStroke" app:strokeWidth="1dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="@dimen/space_md">
+                <TextView style="@style/LabelTitle" android:text="@string/connection_summary"/>
+                <TextView style="@style/LabelRow" android:text="@string/token"/><TextView android:id="@+id/tokenValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/user_email"/><TextView android:id="@+id/emailValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/tariff_title"/><TextView android:id="@+id/tariffValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/country"/><TextView android:id="@+id/countryValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/city"/><TextView android:id="@+id/cityValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/server_ip"/><TextView android:id="@+id/serverIpValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/selected_protocol"/><TextView android:id="@+id/protocolValue" style="@style/ValueRow"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView android:id="@+id/errorCard" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_md" app:cardBackgroundColor="@color/errorBackground" app:cardCornerRadius="@dimen/card_radius" app:cardElevation="0dp" app:strokeColor="@color/errorStroke" app:strokeWidth="1dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="@dimen/space_md">
+                <TextView style="@style/LabelTitle" android:text="@string/error" android:textColor="@color/errorText"/>
+                <TextView android:id="@+id/errorValue" style="@style/ValueRow" android:textColor="@color/errorText"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.button.MaterialButton android:id="@+id/connectButton" style="@style/Widget.Zooot.Button.Primary" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_lg" android:text="@string/connect"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_sm" android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton android:id="@+id/loadConfigButton" style="@style/Widget.Zooot.Button.Secondary" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/load_config"/>
+            <Space android:layout_width="@dimen/space_sm" android:layout_height="1dp"/>
+            <com.google.android.material.button.MaterialButton android:id="@+id/retryButton" style="@style/Widget.Zooot.Button.Secondary" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/retry"/>
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/disconnectButton" style="@style/Widget.Zooot.Button.OutlinedDanger" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_sm" android:text="@string/disconnect"/>
+    </LinearLayout>
+</ScrollView>

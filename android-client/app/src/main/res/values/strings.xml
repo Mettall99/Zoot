@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Zooot VPN</string>
+    <string name="app_title">Zooot VPN</string>
+    <string name="subtitle">Smart protocol selection</string>
+    <string name="backend_url">Backend URL</string>
+    <string name="save">Save</string>
+    <string name="connection_summary">Connection summary</string>
+    <string name="token">Token</string>
+    <string name="user_email">User email</string>
+    <string name="tariff_title">Tariff title</string>
+    <string name="country">Country</string>
+    <string name="city">City</string>
+    <string name="server_ip">Server IP</string>
+    <string name="selected_protocol">Selected protocol</string>
+    <string name="error">Error</string>
+    <string name="connect">Connect</string>
+    <string name="load_config">Load config</string>
+    <string name="retry">Retry</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="empty_value">—</string>
+</resources>
