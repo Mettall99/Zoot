@@ -1,34 +1,54 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+  pull_request:
+
 jobs:
   backend:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: backend-api } }
+    defaults:
+      run:
+        working-directory: backend-api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with:
+          node-version: 22
       - run: npm install
       - run: npm run build
       - run: npm test
+
   admin:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: admin-panel } }
+    defaults:
+      run:
+        working-directory: admin-panel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with:
+          node-version: 22
       - run: npm install
       - run: npm run build
+
   android:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: android-client } }
+    defaults:
+      run:
+        working-directory: android-client
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew test
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - run: chmod +x ./gradlew
+      - run: ./gradlew test --no-daemon
+
   shell:
     runs-on: ubuntu-latest
     steps:
