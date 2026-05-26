@@ -29,3 +29,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```bash
 adb shell am start -a android.intent.action.VIEW -d "zoootconf://demo-token"
 ```
+
+
+## Expected test UI values
+After opening `zoootconf://demo-token` and successful config load:
+- backend URL: `http://31.59.45.197:8080`
+- email: `demo@zooot.local`
+- tariff: `Demo Monthly`
+- country: `DE`
+- city: `Frankfurt`
+- selected protocol: `amneziawg`
+- status: `ReadyToConnect` (or `Connected` after pressing Connect)
