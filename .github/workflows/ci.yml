@@ -1,0 +1,14 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  android-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Android tests
+        run: |
+          cd android-client
+          chmod +x ./gradlew
+          ./gradlew test
+          ./gradlew assembleDebug
