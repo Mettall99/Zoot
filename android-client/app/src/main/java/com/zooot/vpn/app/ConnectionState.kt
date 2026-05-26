@@ -1,0 +1,2 @@
+package com.zooot.vpn.app
+sealed class ConnectionState { object Idle : ConnectionState(); data class TokenReceived(val token: String): ConnectionState(); object LoadingConfig : ConnectionState(); object ConfigLoaded : ConnectionState(); object SelectingProtocol : ConnectionState(); object ReadyToConnect : ConnectionState(); object Connecting : ConnectionState(); object Connected : ConnectionState(); data class Error(val message: String): ConnectionState() }

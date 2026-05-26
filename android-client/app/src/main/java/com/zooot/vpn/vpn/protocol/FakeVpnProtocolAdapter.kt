@@ -1,0 +1,2 @@
+package com.zooot.vpn.vpn.protocol
+class FakeVpnProtocolAdapter(override val type: ProtocolType = ProtocolType.WIREGUARD): VpnProtocolAdapter { override suspend fun prepare(config: VpnConfig) = PrepareResult(true); override suspend fun connect(config: VpnConfig) = ConnectResult(true); override suspend fun disconnect() = DisconnectResult(true); override suspend fun healthCheck(config: VpnConfig) = HealthCheckResult(true, 35) }
