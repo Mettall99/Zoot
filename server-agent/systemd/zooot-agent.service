@@ -1,0 +1,14 @@
+[Unit]
+Description=Zooot VPN Server Agent Health Reporter
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zooot-agent
+EnvironmentFile=/opt/zooot-agent/.env
+ExecStart=/usr/bin/bash /opt/zooot-agent/health-report.sh
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
