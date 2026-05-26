@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsc --noEmit"
   },
   "dependencies": {
     "argon2": "^0.41.1",
