@@ -1,14 +1,6 @@
-# Zooot Android Client (MVP skeleton)
+# Local Android testing
 
-## What is included
-- MainActivity with fake connect flow
-- Deep link parsing for `zoootconf://TOKEN` and `zoootconf://connect?token=TOKEN`
-- Protocol adapter interface + stubs
-- ProtocolSelector scoring and fallback traversal
-- ZootVpnService stub
-- Local unit tests
-
-## Local checks
+## Build and test
 ### Variant A — via installed Gradle
 ```bash
 cd android-client
@@ -16,7 +8,7 @@ gradle test
 gradle assembleDebug
 ```
 
-APK output:
+APK location:
 `android-client/app/build/outputs/apk/debug/app-debug.apk`
 
 ### Variant B — via Android Studio
@@ -24,7 +16,7 @@ APK output:
 - Wait for Gradle Sync to complete.
 - Run **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
 
-## Deep link test
+## Open deep link via ADB
 ```bash
 adb shell am start -a android.intent.action.VIEW -d "zoootconf://demo-token"
 ```

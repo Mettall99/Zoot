@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        working-directory: backend-api
+        run: npm install
+      - name: Build backend
+        working-directory: backend-api
+        run: npm run build
+      - name: Test backend
+        working-directory: backend-api
+        run: npm test
+
+  admin-panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install admin dependencies
+        working-directory: admin-panel
+        run: npm install
+      - name: Build admin panel
+        working-directory: admin-panel
+        run: npm run build
+
+  android-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Test Android client
+        working-directory: android-client
+        run: |
+          gradle test --stacktrace
+      - name: Build debug APK
+        working-directory: android-client
+        run: |
+          gradle assembleDebug --stacktrace
