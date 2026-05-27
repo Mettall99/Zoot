@@ -150,8 +150,14 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val sel = currentSelection
             val adapter: VpnProtocolAdapter = if (sel?.protocol == com.zooot.vpn.selector.Proto.WIREGUARD) wireGuardAdapter else fakeAdapter
-            adapter.disconnect()
-            updateStatus("Disconnected")
+            val result = adapter.disconnect()
+            if (result.ok) {
+                updateStatus("Disconnected")
+                clearError()
+            } else {
+                updateStatus("Error")
+                showError(result.message.ifBlank { "Disconnect failed" })
+            }
         }
     }
 
@@ -204,7 +210,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearError() {
-        errorValue.text = getString(R.string.empty_value)
+        errorValue.text = ""
         errorCard.visibility = View.GONE
     }
 

@@ -12,6 +12,11 @@ class WireGuardProtocolAdapter(
 ) : VpnProtocolAdapter {
     companion object {
         private const val TAG = "WireGuardAdapter"
+
+        internal fun mapConnectFailure(state: Tunnel.State?, error: Exception): ConnectResult {
+            if (state == Tunnel.State.UP) return ConnectResult(true, "Connected")
+            return ConnectResult(false, error.message?.take(120) ?: "WireGuard start failed")
+        }
     }
     override val type: ProtocolType = ProtocolType.WIREGUARD
     private val backend = GoBackend(context)
@@ -24,27 +29,24 @@ class WireGuardProtocolAdapter(
         val raw = config.config
         if (raw.isNullOrBlank()) return ConnectResult(false, "WireGuard config missing")
         Log.d(TAG, "connect: selected protocol=wireguard, config available=true")
-        var state: Tunnel.State? = null
         return try {
             val parsed = Config.parse(ByteArrayInputStream(raw.toByteArray()))
-            state = backend.setState(tunnel, Tunnel.State.UP, parsed)
-            Log.d(TAG, "connect: tunnel state result=${state?.name ?: "unknown"}")
-            ConnectResult(true, "Connected")
+            val state = backend.setState(tunnel, Tunnel.State.UP, parsed)
+            Log.d(TAG, "connect: tunnel state result=${state.name}")
+            if (state == Tunnel.State.UP) ConnectResult(true, "Connected")
+            else ConnectResult(false, "WireGuard start failed")
         } catch (e: Exception) {
-            state = runCatching { backend.getState(tunnel) }.getOrNull()
+            val state = runCatching { backend.getState(tunnel) }.getOrNull()
             Log.w(TAG, "connect: non-fatal wireguard exception with state=${state?.name ?: "unknown"}: ${e::class.java.simpleName}")
-            if (state == Tunnel.State.UP) {
-                ConnectResult(true, "Connected")
-            } else {
-                ConnectResult(false, e.message?.take(120) ?: "WireGuard start failed")
-            }
+            mapConnectFailure(state, e)
         }
     }
+
 
     override suspend fun disconnect(): DisconnectResult = try {
         val state = backend.setState(tunnel, Tunnel.State.DOWN, null)
         Log.d(TAG, "disconnect: tunnel state result=${state.name}")
-        DisconnectResult(true, "Disconnected")
+        DisconnectResult(state == Tunnel.State.DOWN, if (state == Tunnel.State.DOWN) "Disconnected" else "WireGuard stop failed")
     } catch (e: Exception) {
         DisconnectResult(false, e.message?.take(120) ?: "WireGuard stop failed")
     }
