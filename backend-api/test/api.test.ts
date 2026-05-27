@@ -134,12 +134,24 @@ it('resolve-token uses demo_fallback when provisioning fails and fallback exists
   expect(body.servers[0].protocols[0].config).toContain('PrivateKey = demo2');
 });
 
+
+
+it('resolve-token with device_id and successful agent returns config_source=device', async () => {
+  vi.spyOn(provisioning, 'isProvisioningEnabled').mockReturnValue(true);
+  vi.spyOn(provisioning, 'getOrCreateWireGuardDeviceConfig').mockResolvedValue({ config: '[Interface]\nPrivateKey = prodx\n', configSource: 'device' } as any);
+  query.mockResolvedValueOnce({ rowCount: 1, rows: [{ user_id:'u1', id:'u1', email:'demo', tariff_id:'t1', tariff_code:'demo', tariff_title:'Demo', preferred_country:'DE' }] })
+    .mockResolvedValueOnce({ rows: [{ id:'s1', country_code:'DE', city:'Frankfurt', ip:'31.59.45.197', load_percent:20, type:'wireguard', priority:3, port:51821, health_status:'healthy' }] });
+  const r = await post('/api/v1/config/resolve-token', { token:'demo-token', device_id:'android-123' });
+  const body = await r.json();
+  expect(body.servers[0].protocols[0].config_source).toBe('device');
+  expect(body.servers[0].protocols[0].config).toContain('PrivateKey = prodx');
+});
 it('config_source=device only when config is non-empty', async () => {
   vi.spyOn(provisioning, 'isProvisioningEnabled').mockReturnValue(true);
   vi.spyOn(provisioning, 'getOrCreateWireGuardDeviceConfig').mockResolvedValue({ config: ' [Interface]\nPrivateKey = prod\n', configSource: 'device' } as any);
   query.mockResolvedValueOnce({ rowCount: 1, rows: [{ user_id:'u1', id:'u1', email:'demo', tariff_id:'t1', tariff_code:'demo', tariff_title:'Demo', preferred_country:'DE' }] })
     .mockResolvedValueOnce({ rows: [{ id:'s1', country_code:'DE', city:'Frankfurt', ip:'31.59.45.197', load_percent:20, type:'wireguard', priority:3, port:51821, health_status:'healthy' }] });
-  const r = await post('/api/v1/config/resolve-token', { token:'demo-token' });
+  const r = await post('/api/v1/config/resolve-token', { token:'demo-token', device_id:'android-1' });
   const body = await r.json();
   expect(body.servers[0].protocols[0].config_source).toBe('device');
   expect(body.servers[0].protocols[0].config).toContain('PrivateKey = prod');

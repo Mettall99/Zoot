@@ -75,6 +75,7 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
   if (!parsed.success) return res.status(400).json(zodToValidation(parsed.error));
 
   let deviceId = DEFAULT_DEVICE_ID;
+  const hasDeviceId = typeof parsed.data.device_id === 'string' && parsed.data.device_id.trim().length > 0;
   let deviceName: string | null = null;
   try {
     const normalized = normalizeDeviceInput(parsed.data.device_id, parsed.data.device_name);
@@ -117,7 +118,7 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
     }
     let wireguardResponse = { config: null as string | null, config_source: null as string | null };
     if (r.type === 'wireguard') {
-      if (isProvisioningEnabled()) {
+      if (hasDeviceId && isProvisioningEnabled()) {
         try {
           const result = await getOrCreateWireGuardDeviceConfig(db, row.user_id, r.id, deviceId, deviceName);
           if (isValidConfig(result.config)) {
@@ -134,11 +135,14 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
             : { config: null, config_source: null };
         }
       } else {
-        // TODO(android): all clients should send stable generated device_id.
         wireguardResponse = isValidConfig(demoWireguardConfig)
           ? { config: demoWireguardConfig, config_source: 'demo_fallback' }
           : { config: null, config_source: null };
       }
+    }
+    if (r.type === 'wireguard') {
+      const selectedSource = wireguardResponse.config_source ?? 'none';
+      console.info(`wireguard config selected source=${selectedSource} hasDeviceId=${hasDeviceId}`);
     }
     serversMap.get(r.id).protocols.push({
       type: r.type,
@@ -173,6 +177,10 @@ app.get('/api/v1/servers/recommended', async (_req, res) => {
   for (const r of rows.rows) {
     if (!serversMap.has(r.id)) {
       serversMap.set(r.id, { id: r.id, country: r.country_code, city: r.city, ip: r.ip, load_percent: r.load_percent, protocols: [] });
+    }
+    if (r.type === 'wireguard') {
+      const selectedSource = wireguardResponse.config_source ?? 'none';
+      console.info(`wireguard config selected source=${selectedSource} hasDeviceId=${hasDeviceId}`);
     }
     serversMap.get(r.id).protocols.push({ type: r.type, priority: r.priority, port: r.port, health_status: r.health_status });
   }
