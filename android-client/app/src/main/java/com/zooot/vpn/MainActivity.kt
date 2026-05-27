@@ -2,6 +2,7 @@ package com.zooot.vpn
 
 import android.content.Context
 import android.net.VpnService
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -62,8 +63,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectedTrafficTx: TextView
 
     private var currentState: AppUiState = AppUiState.StartState
+    private var pendingVpnPermissionConnect = false
+    private lateinit var connectButton: MaterialButton
+    private lateinit var disconnectButton: MaterialButton
     private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (it.resultCode == RESULT_OK) connectInternal() else showError("VPN permission denied")
+        if (it.resultCode == RESULT_OK) {
+            Log.d(TAG, "vpn permission granted")
+            if (pendingVpnPermissionConnect) connectInternal()
+        } else {
+            Log.d(TAG, "vpn permission denied")
+            pendingVpnPermissionConnect = false
+            setConnecting(false)
+            showError("Для подключения нужно разрешение VPN")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,8 +119,10 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.selectServerButton).setOnClickListener { showConnectionScreen() }
         findViewById<MaterialButton>(R.id.backToServersButton).setOnClickListener { showState(AppUiState.ServerSelectionState) }
-        findViewById<MaterialButton>(R.id.connectButton).setOnClickListener { connect() }
-        findViewById<MaterialButton>(R.id.disconnectButton).setOnClickListener { disconnect() }
+        connectButton = findViewById(R.id.connectButton)
+        disconnectButton = findViewById(R.id.disconnectButton)
+        connectButton.setOnClickListener { connect() }
+        disconnectButton.setOnClickListener { disconnect() }
     }
 
     private fun submitLink(rawLink: String, source: String) {
@@ -203,34 +217,55 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connect() {
-        val server = selectedServer ?: return showError("Выберите сервер")
         val protocol = selectedProtocol ?: return showError("Выберите протокол")
         if (protocol.name != "WireGuard" || protocol.config.isNullOrBlank() || protocol.config.trim().lowercase() == "null") return showError("WireGuard config is not available")
+        Log.d(TAG, "vpn permission check")
         val intent = VpnService.prepare(this)
-        if (intent != null) vpnPermissionLauncher.launch(intent) else connectInternal()
+        if (intent != null) {
+            Log.d(TAG, "vpn permission required")
+            pendingVpnPermissionConnect = true
+            setConnecting(true)
+            launchVpnPermission(intent)
+            return
+        }
+        pendingVpnPermissionConnect = false
+        connectInternal()
+    }
+
+    internal fun launchVpnPermission(intent: Intent) {
+        vpnPermissionLauncher.launch(intent)
     }
 
     private fun connectInternal() {
         val server = selectedServer ?: return
         val protocol = selectedProtocol ?: return
+        pendingVpnPermissionConnect = false
         lifecycleScope.launch {
-            val result = wireGuardAdapter.connect(VpnConfig(server.id, "", protocol.config))
+            setConnecting(true)
+            Log.d(TAG, "wireguard connect start")
+            val result = withContext(Dispatchers.IO) {
+                wireGuardAdapter.connect(VpnConfig(server.id, "", protocol.config))
+            }
+            Log.d(TAG, "wireguard connect result success=${result.ok} message=${result.message.take(120)}")
             if (result.ok) {
                 session = ConnectionSession(server, protocol.name, SystemClock.elapsedRealtime())
                 startTimer()
                 showState(AppUiState.ConnectedState)
             } else showError(result.message)
+            setConnecting(false)
         }
     }
 
     private fun disconnect() {
         lifecycleScope.launch {
+            setConnecting(true)
             val adapter: VpnProtocolAdapter = if (selectedProtocol?.name == "WireGuard") wireGuardAdapter else fakeAdapter
-            val result = adapter.disconnect()
+            val result = withContext(Dispatchers.IO) { adapter.disconnect() }
             if (result.ok) {
                 stopTimer()
                 showState(AppUiState.ConnectionSetupState)
             } else showError(result.message)
+            setConnecting(false)
         }
     }
 
@@ -272,6 +307,12 @@ class MainActivity : AppCompatActivity() {
         continueButton.isEnabled = !isLoading
         linkInput.isEnabled = !isLoading
         continueButton.text = if (isLoading) "Загрузка..." else "Продолжить"
+    }
+
+    private fun setConnecting(isConnecting: Boolean) {
+        connectButton.isEnabled = !isConnecting
+        connectButton.text = if (isConnecting) "Подключение..." else "Connect"
+        disconnectButton.isEnabled = !isConnecting
     }
 
     private fun readBackendUrl(): String {
