@@ -5,7 +5,8 @@ export type ApiErrorCode =
   | 'USER_ALREADY_EXISTS'
   | 'INVALID_CREDENTIALS'
   | 'CONFIG_TOKEN_NOT_FOUND'
-  | 'SUBSCRIPTION_INACTIVE';
+  | 'SUBSCRIPTION_INACTIVE'
+  | 'INVALID_DEVICE_ID';
 
 export const apiError = (code: ApiErrorCode, message: string) => ({ error: { code, message } });
 
