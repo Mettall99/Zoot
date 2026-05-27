@@ -90,3 +90,8 @@ curl -X POST http://31.59.45.197:8080/api/v1/config/resolve-token \
 - Нужен revoke peer lifecycle.
 - Нужна key rotation.
 - Нельзя переиспользовать один WireGuard private key для всех пользователей.
+
+## Android MVP validation
+- Ensure backend response includes `wireguard` protocol and `config` payload.
+- Android client requests VPN permission at connect time (not at config load time).
+- After permission approval, tunnel should go UP and `wg show` should display latest handshake + transfer bytes.

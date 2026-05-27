@@ -1,11 +1,14 @@
 ﻿package com.zooot.vpn
 
 import android.content.Context
+import android.net.VpnService
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.zooot.vpn.api.ResolveTokenResult
@@ -14,7 +17,13 @@ import com.zooot.vpn.deeplink.DeepLinkParser
 import com.zooot.vpn.selector.NetworkType
 import com.zooot.vpn.selector.ProtocolSelector
 import com.zooot.vpn.selector.Selection
+import com.zooot.vpn.vpn.protocol.ConnectResult
 import com.zooot.vpn.vpn.protocol.FakeVpnProtocolAdapter
+import com.zooot.vpn.vpn.protocol.ProtocolType
+import com.zooot.vpn.vpn.protocol.VpnConfig
+import com.zooot.vpn.vpn.protocol.VpnProtocolAdapter
+import com.zooot.vpn.vpn.protocol.WireGuardProtocolAdapter
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private lateinit var backendUrlInput: EditText
@@ -25,6 +34,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cityValue: TextView
     private lateinit var serverIpValue: TextView
     private lateinit var protocolValue: TextView
+    private lateinit var configStatusValue: TextView
     private lateinit var statusBadge: TextView
     private lateinit var errorCard: MaterialCardView
     private lateinit var errorValue: TextView
@@ -33,11 +43,17 @@ class MainActivity : AppCompatActivity() {
     private var currentBackendUrl: String = ""
     private var currentSelection: Selection? = null
     private var lastLoadFailed = false
+    private lateinit var wireGuardAdapter: WireGuardProtocolAdapter
+    private val fakeAdapter = FakeVpnProtocolAdapter(ProtocolType.AMNEZIAWG)
+    private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (it.resultCode == RESULT_OK) { connectInternal() } else { showError("VPN permission denied") }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         bindViews()
+        wireGuardAdapter = WireGuardProtocolAdapter(this)
 
         currentBackendUrl = readBackendUrl()
         backendUrlInput.setText(currentBackendUrl)
@@ -70,10 +86,11 @@ class MainActivity : AppCompatActivity() {
         cityValue = findViewById(R.id.cityValue)
         serverIpValue = findViewById(R.id.serverIpValue)
         protocolValue = findViewById(R.id.protocolValue)
+        configStatusValue = findViewById(R.id.configStatusValue)
         statusBadge = findViewById(R.id.statusBadge)
         errorCard = findViewById(R.id.errorCard)
         errorValue = findViewById(R.id.errorValue)
-        render(UiState("", "", "", "", "", ""))
+        render(UiState("", "", "", "", "", "", ""))
     }
 
     private fun loadConfig(auto: Boolean) {
@@ -100,13 +117,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connect() {
-        currentSelection ?: return showError("No healthy protocols")
-        updateStatus("Connected")
-        clearError()
+        val selection = currentSelection ?: return showError("No healthy protocols")
+        if (selection.protocol == com.zooot.vpn.selector.Proto.WIREGUARD && !selection.config.isNullOrBlank()) {
+            val intent = VpnService.prepare(this)
+            if (intent != null) { vpnPermissionLauncher.launch(intent); return }
+        }
+        connectInternal()
+    }
+
+    private fun connectInternal() {
+        val selection = currentSelection ?: return showError("No healthy protocols")
+        lifecycleScope.launch {
+            val adapter: VpnProtocolAdapter = if (selection.protocol == com.zooot.vpn.selector.Proto.WIREGUARD) wireGuardAdapter else fakeAdapter
+            val result: ConnectResult = adapter.connect(VpnConfig(selection.serverId, selection.configUrl, selection.config))
+            if (result.ok) { updateStatus("Connected"); clearError() } else { updateStatus("Error"); showError(result.message.ifBlank { "Connection failed" }) }
+        }
     }
 
     private fun disconnect() {
-        updateStatus("Disconnected")
+        lifecycleScope.launch {
+            val sel = currentSelection
+            val adapter: VpnProtocolAdapter = if (sel?.protocol == com.zooot.vpn.selector.Proto.WIREGUARD) wireGuardAdapter else fakeAdapter
+            adapter.disconnect()
+            updateStatus("Disconnected")
+        }
     }
 
     private fun mapConfig(result: ResolveTokenResult): UiState {
@@ -122,7 +156,8 @@ class MainActivity : AppCompatActivity() {
             server.country,
             server.city.ifBlank { "Frankfurt" },
             server.serverIp,
-            selection.protocol.name.lowercase()
+            selection.protocol.name.lowercase(),
+            if (selection.config.isNullOrBlank()) "missing" else "available (len=${selection.config.length})"
         )
     }
 
@@ -133,6 +168,7 @@ class MainActivity : AppCompatActivity() {
         cityValue.text = readable(state.city)
         serverIpValue.text = readable(state.serverIp)
         protocolValue.text = readable(state.protocol)
+        configStatusValue.text = readable(state.configStatus)
     }
 
     private fun readable(value: String): String = value.ifBlank { getString(R.string.empty_value) }
@@ -186,6 +222,7 @@ data class UiState(
     val country: String,
     val city: String,
     val serverIp: String,
-    val protocol: String
+    val protocol: String,
+    val configStatus: String
 )
 

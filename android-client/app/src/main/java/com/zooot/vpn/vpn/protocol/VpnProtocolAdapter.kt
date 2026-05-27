@@ -2,7 +2,7 @@ package com.zooot.vpn.vpn.protocol
 
 enum class ProtocolType { WIREGUARD, AMNEZIAWG, XRAY_VLESS_REALITY, OPENVPN_UDP, OPENVPN_TCP }
 
-data class VpnConfig(val serverId: String, val configUrl: String)
+data class VpnConfig(val serverId: String, val configUrl: String, val config: String? = null)
 
 data class PrepareResult(val ok: Boolean, val message: String = "")
 data class ConnectResult(val ok: Boolean, val message: String = "")
