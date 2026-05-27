@@ -11,6 +11,9 @@
 - Secrets through env/secret manager.
 
 ## Security notes
+- Backend must not run `wg`/`wg-quick` directly from Docker container.
+- WireGuard provisioning should happen through host-side server-agent bound to `127.0.0.1`.
+- Protect `ZOOOT_AGENT_TOKEN` and rotate it regularly.
 - Demo key must be rotated before production.
 - Never log private keys or full config.
 - WireGuard configs should stay `chmod 600`.
