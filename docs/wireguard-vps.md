@@ -95,3 +95,6 @@ curl -X POST http://31.59.45.197:8080/api/v1/config/resolve-token \
 - Ensure backend response includes `wireguard` protocol and `config` payload.
 - Android client requests VPN permission at connect time (not at config load time).
 - After permission approval, tunnel should go UP and `wg show` should display latest handshake + transfer bytes.
+
+## Provisioning + revoke
+Use backend env `WIREGUARD_PROVISIONING_ENABLED=true` with mounted clients/scripts paths. For revoke run `server-agent/wireguard/revoke-client.sh <client-name>`.

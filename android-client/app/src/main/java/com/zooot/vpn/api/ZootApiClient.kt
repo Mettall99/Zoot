@@ -17,8 +17,8 @@ object ZootApiClient {
     private const val TAG = "ZootApiClient"
     val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
 
-    fun resolveToken(token: String, backendUrl: String = backendBaseUrl): ResolveTokenResult {
-        val body = JSONObject().put("token", token).toString()
+    fun resolveToken(token: String, deviceId: String, deviceName: String, backendUrl: String = backendBaseUrl): ResolveTokenResult {
+        val body = JSONObject().put("token", token).put("device_id", deviceId).put("device_name", deviceName).toString()
         val response = postJson("$backendUrl/api/v1/config/resolve-token", body)
         return parseResult(response)
     }
