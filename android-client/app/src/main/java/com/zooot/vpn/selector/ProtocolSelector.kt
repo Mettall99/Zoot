@@ -12,6 +12,7 @@ data class HistoryVal(val success: Boolean, val failurePenalty: Int = 0)
 data class Selection(val serverId: String, val protocol: Proto, val configUrl: String, val score: Int, val config: String? = null, val port: Int? = null)
 
 object ProtocolSelector {
+    private fun hasValidWireGuardConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
     private val protocolScore = mapOf(Proto.AMNEZIAWG to 50, Proto.XRAY_VLESS_REALITY to 45, Proto.WIREGUARD to 35, Proto.OPENVPN_UDP to 25, Proto.OPENVPN_TCP to 15)
 
     fun select(servers: List<ServerCandidate>, country: String, network: NetworkType, history: Map<HistoryKey, HistoryVal>): Selection? {
@@ -20,7 +21,7 @@ object ProtocolSelector {
             .filter { it.country == country && it.status == ServerStatus.ONLINE }
             .flatMap { server ->
                 server.protocols.asSequence()
-                    .filter { it.type == Proto.WIREGUARD && it.health != HealthStatus.FAILED && !it.config.isNullOrBlank() }
+                    .filter { it.type == Proto.WIREGUARD && it.health != HealthStatus.FAILED && hasValidWireGuardConfig(it.config) }
                     .map { sp -> Selection(server.serverId, sp.type, sp.configUrl, Int.MAX_VALUE, sp.config, sp.port) }
             }
             .firstOrNull()
@@ -30,7 +31,7 @@ object ProtocolSelector {
 
         var best: Selection? = null
         for (server in filtered) {
-            for (sp in server.protocols.filter { it.health != HealthStatus.FAILED }) {
+            for (sp in server.protocols.filter { it.health != HealthStatus.FAILED && (it.type != Proto.WIREGUARD || hasValidWireGuardConfig(it.config)) }) {
                 val key = HistoryKey(network, server.serverId, sp.type)
                 val h = history[key]
                 val historyScore = when (h?.success) { true -> 20; false -> -30; null -> 0 }

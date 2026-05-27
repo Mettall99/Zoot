@@ -228,7 +228,7 @@ class MainActivity : AppCompatActivity() {
 
 sealed class AppUiState { object StartState: AppUiState(); object ServerSelectionState: AppUiState(); object ConnectionSetupState: AppUiState(); object ConnectedState: AppUiState() }
 data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?)
-data class UiProtocolOption(val name: String, val enabled: Boolean, val config: String?) { companion object { fun wireguard(config: String?) = UiProtocolOption("WireGuard", !config.isNullOrBlank(), config); fun disabled(name: String)=UiProtocolOption(name,false,null)} }
+data class UiProtocolOption(val name: String, val enabled: Boolean, val config: String?) { companion object { fun wireguard(config: String?) = UiProtocolOption("WireGuard", isValidWireGuardConfig(config), config); fun disabled(name: String)=UiProtocolOption(name,false,null); private fun isValidWireGuardConfig(config: String?) = !config.isNullOrBlank() && config.trim().lowercase() != "null" } }
 data class ConnectionSession(val server: UiServer, val protocol: String, val startedAtMs: Long)
 
 data class LinkValidationResult(val valid: Boolean, val token: String? = null, val error: String? = null)
@@ -241,7 +241,7 @@ object LinkInputParser {
     }
     fun parseToken(raw: String): String? = DeepLinkParser.extractToken(raw)
 }
-object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && !it.wireGuardConfig.isNullOrBlank() }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
+object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && !it.wireGuardConfig.isNullOrBlank() && it.wireGuardConfig.trim().lowercase() != "null" }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
 object TimerFormatter { fun formatElapsed(ms: Long): String { val total = ms/1000; val h=total/3600; val m=(total%3600)/60; val s=total%60; return "%02d:%02d:%02d".format(h,m,s) } }
 object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate)= UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}?.config) }
 

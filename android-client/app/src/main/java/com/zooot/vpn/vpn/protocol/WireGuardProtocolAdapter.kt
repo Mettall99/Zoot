@@ -22,12 +22,14 @@ class WireGuardProtocolAdapter(
     private val backend = GoBackend(context)
     private val tunnel = SimpleTunnel("zooot")
 
+    private fun isValidWireGuardConfig(raw: String?): Boolean = !raw.isNullOrBlank() && raw.trim().lowercase() != "null"
+
     override suspend fun prepare(config: VpnConfig): PrepareResult =
-        if (config.config.isNullOrBlank()) PrepareResult(false, "WireGuard config missing") else PrepareResult(true, "Prepared")
+        if (!isValidWireGuardConfig(config.config)) PrepareResult(false, "WireGuard config missing") else PrepareResult(true, "Prepared")
 
     override suspend fun connect(config: VpnConfig): ConnectResult {
         val raw = config.config
-        if (raw.isNullOrBlank()) return ConnectResult(false, "WireGuard config missing")
+        if (!isValidWireGuardConfig(raw)) return ConnectResult(false, "WireGuard config missing")
         Log.d(TAG, "connect: selected protocol=wireguard, config available=true")
         return try {
             val parsed = Config.parse(ByteArrayInputStream(raw.toByteArray()))
@@ -51,7 +53,7 @@ class WireGuardProtocolAdapter(
         DisconnectResult(false, e.message?.take(120) ?: "WireGuard stop failed")
     }
 
-    override suspend fun healthCheck(config: VpnConfig): HealthCheckResult = HealthCheckResult(ok = !config.config.isNullOrBlank())
+    override suspend fun healthCheck(config: VpnConfig): HealthCheckResult = HealthCheckResult(ok = isValidWireGuardConfig(config.config))
 
     private class SimpleTunnel(private val name: String) : Tunnel {
         override fun getName(): String = name
