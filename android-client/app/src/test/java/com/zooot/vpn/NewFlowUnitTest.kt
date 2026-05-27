@@ -39,8 +39,8 @@ class NewFlowUnitTest {
     }
     @Test fun nullStringWireGuardConfigNotRecommended() {
         val servers = listOf(
-            UiServer("1","DE","Frankfurt","1.1.1.1",20,20,true,"null"),
-            UiServer("2","DE","Berlin","2.2.2.2",30,30,true,"")
+            UiServer("1","DE","Frankfurt","1.1.1.1",20,20,true,"null","demo_fallback"),
+            UiServer("2","DE","Berlin","2.2.2.2",30,30,true,"","device")
         )
         assertEquals("1", ServerRecommendation.pick(servers)?.id)
     }
