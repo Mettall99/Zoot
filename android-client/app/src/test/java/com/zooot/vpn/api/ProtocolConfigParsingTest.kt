@@ -70,6 +70,7 @@ class ProtocolConfigParsingTest {
         val wg = result.servers.first().protocols.first { it.type == Proto.WIREGUARD }
         assertEquals("", wg.config)
     }
+
     @Test
     fun missingConfigFieldParsedAsUnavailable() {
         val raw = """
@@ -81,5 +82,4 @@ class ProtocolConfigParsingTest {
         val wg = result.servers.first().protocols.first { it.type == Proto.WIREGUARD }
         assertEquals("", wg.config)
     }
-
 }
