@@ -9,6 +9,7 @@ import com.zooot.vpn.selector.ServerStatus
 import org.json.JSONArray
 import org.json.JSONObject
 import android.util.Log
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -19,10 +20,12 @@ object ZootApiClient {
     val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
 
     fun resolveToken(token: String, deviceId: String, deviceName: String, backendUrl: String = backendBaseUrl): ResolveTokenResult {
-        val body = JSONObject().put("token", token).put("device_id", deviceId).put("device_name", deviceName).toString()
+        val body = buildResolveTokenBody(token, deviceId, deviceName)
         val response = postJson("$backendUrl/api/v1/config/resolve-token", body)
         return parseResult(response)
     }
+    fun buildResolveTokenBody(token: String, deviceId: String, deviceName: String): String =
+        JSONObject().put("token", token).put("device_id", deviceId).put("device_name", deviceName).toString()
 
     private fun postJson(endpoint: String, body: String): String {
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -37,7 +40,7 @@ object ZootApiClient {
         val code = conn.responseCode
         val stream = if (code in 200..299) conn.inputStream else conn.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) throw IllegalStateException("Backend HTTP $code: $text")
+        if (code !in 200..299) throw ApiHttpException(code, text)
         return text
     }
 
@@ -101,6 +104,8 @@ object ZootApiClient {
         else -> null
     }
 }
+
+class ApiHttpException(val code: Int, body: String): IOException("Backend HTTP $code: $body")
 
 data class ResolveTokenResult(
     val preferredCountry: String,
