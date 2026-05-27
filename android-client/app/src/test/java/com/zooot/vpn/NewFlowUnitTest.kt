@@ -8,7 +8,7 @@ import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
 import org.junit.Assert.*
 import org.junit.Test
-import org.json.JSONObject
+import com.google.gson.JsonParser
 
 class NewFlowUnitTest {
     @Test fun manualLinkParsing() { assertEquals("demo-token", LinkInputParser.parseToken("zoootconf://demo-token")) }
@@ -18,9 +18,9 @@ class NewFlowUnitTest {
     }
     @Test fun resolveBodyContainsDeviceIdentityFields() {
         val body = ZootApiClient.buildResolveTokenBody("demo-token", "device-1", LinkFlowContract.DEVICE_NAME)
-        val json = JSONObject(body)
-        assertEquals("device-1", json.getString("device_id"))
-        assertEquals(LinkFlowContract.DEVICE_NAME, json.getString("device_name"))
+        val json = JsonParser.parseString(body).asJsonObject
+        assertEquals("device-1", json.get("device_id").asString)
+        assertEquals(LinkFlowContract.DEVICE_NAME, json.get("device_name").asString)
     }
     @Test fun defaultDebugBackendUrlIsMvpBackend() { assertEquals("http://31.59.45.197:8080", LinkFlowContract.DEBUG_MVP_BACKEND_URL) }
     @Test fun invalidLinkValidation() { val r = LinkInputParser.validate("http://bad"); assertFalse(r.valid); assertEquals("Неверный формат ссылки", r.error) }
@@ -39,8 +39,8 @@ class NewFlowUnitTest {
     }
     @Test fun nullStringWireGuardConfigNotRecommended() {
         val servers = listOf(
-            UiServer("1","DE","Frankfurt","1.1.1.1",20,20,true,"null"),
-            UiServer("2","DE","Berlin","2.2.2.2",30,30,true,"")
+            UiServer("1","DE","Frankfurt","1.1.1.1",20,20,true,"null","demo_fallback"),
+            UiServer("2","DE","Berlin","2.2.2.2",30,30,true,"","device")
         )
         assertEquals("1", ServerRecommendation.pick(servers)?.id)
     }
