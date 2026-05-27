@@ -66,6 +66,7 @@ describe('auth + config api', () => {
   });
   it('invalid token returns 404', async () => { query.mockResolvedValueOnce({ rowCount: 0, rows: [] }); const r=await post('/api/v1/config/resolve-token',{token:'x'}); expect(r.status).toBe(404); });
   it('inactive subscription returns 403', async () => { query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id:'u1', email:'demo', tariff_id:null }] }); const r=await post('/api/v1/config/resolve-token',{token:'demo-token'}); expect(r.status).toBe(403); });
+
   it('health works', async () => { const r = await fetch(`${base}/health`); expect(r.status).toBe(200); });
 });
 

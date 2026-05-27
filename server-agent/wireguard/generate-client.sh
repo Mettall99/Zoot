@@ -4,10 +4,13 @@ set -euo pipefail
 if [[ "${EUID}" -ne 0 ]]; then echo "This script must be run as root." >&2; exit 1; fi
 
 PRINT_CONFIG="false"
-if [[ "${1:-}" == "--print-config" ]]; then PRINT_CONFIG="true"; shift; fi
-if [[ $# -ne 1 ]]; then echo "Usage: $0 [--print-config] <client-name>" >&2; exit 1; fi
-CLIENT_NAME="$1"
-[[ "$CLIENT_NAME" =~ ^[a-zA-Z0-9._-]{1,80}$ ]] || { echo "Invalid client name" >&2; exit 1; }
+JSON_OUTPUT="false"
+if [[ "${2:-}" == "--print-config" || "${1:-}" == "--print-config" ]]; then PRINT_CONFIG="true"; fi
+if [[ "${2:-}" == "--json" || "${1:-}" == "--json" ]]; then JSON_OUTPUT="true"; fi
+CLIENT_NAME="${1:-}"
+if [[ "$CLIENT_NAME" == "--print-config" || "$CLIENT_NAME" == "--json" ]]; then CLIENT_NAME="${2:-}"; fi
+if [[ -z "$CLIENT_NAME" ]]; then echo "Usage: $0 <client-name> [--json] [--print-config]" >&2; exit 1; fi
+[[ "$CLIENT_NAME" =~ ^[a-zA-Z0-9._-]{1,100}$ ]] || { echo "Invalid client name" >&2; exit 1; }
 
 WG_IFACE="wg0"; WG_PORT="51821"; ENDPOINT="31.59.45.197"; WG_SUBNET_PREFIX="10.66.66"; WG_NETWORK_CIDR="10.66.66.0/24"
 ZOOOT_DIR="/etc/zooot/wireguard"; CLIENTS_DIR="${ZOOOT_DIR}/clients"; SERVER_PUB_KEY_FILE="${ZOOOT_DIR}/server.public"
@@ -49,7 +52,13 @@ chmod 600 "${CLIENT_CONF_PATH}" "${CLIENT_PRIV_PATH}" "${CLIENT_PUB_PATH}"
 wg set "${WG_IFACE}" peer "${CLIENT_PUBLIC_KEY}" allowed-ips "${CLIENT_ADDR}"
 wg-quick save "${WG_IFACE}" >/dev/null
 
-echo "config_path=${CLIENT_CONF_PATH}"
-echo "assigned_ip=${CLIENT_ADDR}"
-echo "public_key=${CLIENT_PUBLIC_KEY}"
+if [[ "$JSON_OUTPUT" == "true" ]]; then
+  cat <<JSON
+{"client_name":"${CLIENT_NAME}","assigned_ip":"${CLIENT_ADDR}","public_key":"${CLIENT_PUBLIC_KEY}","config_path":"${CLIENT_CONF_PATH}"}
+JSON
+else
+  echo "config_path=${CLIENT_CONF_PATH}"
+  echo "assigned_ip=${CLIENT_ADDR}"
+  echo "public_key=${CLIENT_PUBLIC_KEY}"
+fi
 [[ "$PRINT_CONFIG" == "true" ]] && cat "${CLIENT_CONF_PATH}"

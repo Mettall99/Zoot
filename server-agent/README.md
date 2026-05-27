@@ -1,6 +1,6 @@
 # Server Agent
 
-Bash/systemd агент для установки протоколов, health-check и отправки метрик нагрузки.
+Bash/systemd агент для установки протоколов, health-check и WireGuard provisioning API на host VPS.
 
 ## Run
 ```bash
@@ -9,33 +9,42 @@ bash install.sh
 bash health-report.sh
 ```
 
-## WireGuard MVP on VPS
-
-> В этом PR добавлены только server-side скрипты для первого реального WireGuard протокола.
+## WireGuard scripts on VPS
 
 ```bash
 cd /opt/zooot/server-agent/wireguard
-chmod +x install-wireguard.sh generate-client.sh status.sh uninstall-wireguard.sh
+chmod +x install-wireguard.sh generate-client.sh revoke-client.sh status.sh uninstall-wireguard.sh
 ./install-wireguard.sh
-./generate-client.sh demo
+./generate-client.sh demo --json
 ./status.sh
 ```
 
-### Firewall
+## Host-side HTTP API
+
+API lives in `server-agent/api/server.js` and must run on host (not in backend container).
 
 ```bash
-ufw allow 51821/udp
-ufw status
+cd /opt/zooot/server-agent/api
+ZOOOT_AGENT_TOKEN=change-me ZOOOT_AGENT_HOST=127.0.0.1 ZOOOT_AGENT_PORT=9090 node server.js
+curl http://127.0.0.1:9090/health
 ```
 
-### Что делают скрипты
+systemd unit: `server-agent/systemd/zooot-server-agent.service`
 
-- `install-wireguard.sh` — ставит WireGuard и поднимает `wg0` на `31.59.45.197:51821`, сеть `10.66.66.0/24`.
-- `generate-client.sh <name>` — создает peer, выделяет IP `10.66.66.x/32`, пишет конфиг в `/etc/zooot/wireguard/clients/<name>.conf` и печатает его в stdout.
-- `status.sh` — показывает `wg show`, `systemctl status wg-quick@wg0 --no-pager`, и проверку UDP порта `51821`.
-- `uninstall-wireguard.sh` — останавливает/отключает сервис и спрашивает подтверждение перед удалением клиентских конфигов.
+```bash
+sudo cp /opt/zooot/server-agent/systemd/zooot-server-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now zooot-server-agent
+curl http://127.0.0.1:9090/health
+```
+
+### API auth
+
+- Header: `X-Zooot-Agent-Token`
+- Env token: `ZOOOT_AGENT_TOKEN`
+- Bind defaults: `127.0.0.1:9090`
 
 ### Secrets
 
-- Приватные ключи генерируются только на сервере.
 - Не коммитьте `/etc/zooot/wireguard/*` и любые сгенерированные `*.private`/`*.key` в git.
+- Приватные клиентские конфиги: `chmod 600`.

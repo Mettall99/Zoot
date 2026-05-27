@@ -1,0 +1,16 @@
+[Unit]
+Description=Zooot server-agent WireGuard API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zooot/server-agent/api
+Environment=ZOOOT_AGENT_TOKEN=change-me
+Environment=ZOOOT_AGENT_HOST=127.0.0.1
+Environment=ZOOOT_AGENT_PORT=9090
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
