@@ -57,3 +57,8 @@ adb shell am start -a android.intent.action.VIEW -d "zoootconf://demo-token"
 - Rounded **summary cards** for backend and connection data.
 - **Editable backend URL** with compact Save action.
 - Modern action layout: primary **Connect**, plus secondary Load config / Retry and outlined Disconnect.
+
+## WireGuard MVP
+- Backend `/api/v1/config/resolve-token` must return `wireguard` protocol with non-empty `config`.
+- On Android, tapping **Connect** for selected `wireguard` requests VPN permission via `VpnService.prepare(...)` and then starts tunnel.
+- Verify VPS tunnel status with `wg show` (expect latest handshake + transfer bytes after connect).

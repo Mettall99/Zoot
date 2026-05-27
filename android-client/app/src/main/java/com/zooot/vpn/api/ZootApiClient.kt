@@ -8,6 +8,7 @@ import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -56,8 +57,21 @@ object ZootApiClient {
             val protocols = mutableListOf<ServerProtocol>()
             val protocolItems = server.optJSONArray("protocols") ?: JSONArray()
             for (p in 0 until protocolItems.length()) {
-                val proto = protoFromApi(protocolItems.getString(p)) ?: continue
-                protocols += ServerProtocol(proto, HealthStatus.HEALTHY, "")
+                val item = protocolItems.get(p)
+                when (item) {
+                    is String -> {
+                        val proto = protoFromApi(item) ?: continue
+                        protocols += ServerProtocol(proto, HealthStatus.HEALTHY, "", null)
+                    }
+                    is JSONObject -> {
+                        val protoName = item.optString("protocol", item.optString("type", ""))
+                        val proto = protoFromApi(protoName) ?: continue
+                        val config = item.optString("config", "").ifBlank { null }
+                        val health = if (item.optString("health", "healthy").lowercase() == "failed") HealthStatus.FAILED else HealthStatus.HEALTHY
+                        val configUrl = item.optString("config_url", "")
+                        protocols += ServerProtocol(proto, health, configUrl, config)
+                    }
+                }
             }
             if (protocols.isEmpty()) protocols += ServerProtocol(Proto.AMNEZIAWG, HealthStatus.HEALTHY, "")
 

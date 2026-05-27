@@ -29,6 +29,7 @@
                 <TextView style="@style/LabelRow" android:text="@string/city"/><TextView android:id="@+id/cityValue" style="@style/ValueRow"/>
                 <TextView style="@style/LabelRow" android:text="@string/server_ip"/><TextView android:id="@+id/serverIpValue" style="@style/ValueRow"/>
                 <TextView style="@style/LabelRow" android:text="@string/selected_protocol"/><TextView android:id="@+id/protocolValue" style="@style/ValueRow"/>
+                <TextView style="@style/LabelRow" android:text="@string/wireguard_config"/><TextView android:id="@+id/configStatusValue" style="@style/ValueRow"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

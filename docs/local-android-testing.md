@@ -50,3 +50,9 @@ Backward-compatibility note:
 - Rounded **summary cards** for backend and connection data.
 - **Editable backend URL** with compact Save action.
 - Modern action layout: primary **Connect**, plus secondary Load config / Retry and outlined Disconnect.
+
+## WireGuard real adapter check
+1. Load token config and confirm `WireGuard config: available`.
+2. Tap **Connect** and accept VPN permission prompt.
+3. Expect app status `Connected`.
+4. On VPS run `wg show` and verify peer handshake/transfer counters update.

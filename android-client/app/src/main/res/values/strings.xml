@@ -18,4 +18,5 @@
     <string name="retry">Retry</string>
     <string name="disconnect">Disconnect</string>
     <string name="empty_value">—</string>
+    <string name="wireguard_config">WireGuard config</string>
 </resources>
