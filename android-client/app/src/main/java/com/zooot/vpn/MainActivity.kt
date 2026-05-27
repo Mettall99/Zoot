@@ -25,9 +25,11 @@ import com.zooot.vpn.vpn.protocol.ProtocolType
 import com.zooot.vpn.vpn.protocol.VpnConfig
 import com.zooot.vpn.vpn.protocol.VpnProtocolAdapter
 import com.zooot.vpn.vpn.protocol.WireGuardProtocolAdapter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
@@ -51,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var linkInputLayout: TextInputLayout
     private lateinit var linkInput: TextInputEditText
     private lateinit var serversList: LinearLayout
+    private lateinit var continueButton: MaterialButton
     private lateinit var protocolsList: LinearLayout
     private lateinit var errorCard: MaterialCardView
     private lateinit var errorText: TextView
@@ -88,6 +91,7 @@ class MainActivity : AppCompatActivity() {
         linkInputLayout = findViewById(R.id.linkInputLayout)
         linkInput = findViewById(R.id.linkInput)
         serversList = findViewById(R.id.serversList)
+        continueButton = findViewById(R.id.continueButton)
         protocolsList = findViewById(R.id.protocolsList)
         errorCard = findViewById(R.id.errorCard)
         errorText = findViewById(R.id.errorValue)
@@ -97,7 +101,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupActions() {
-        findViewById<MaterialButton>(R.id.continueButton).setOnClickListener {
+        continueButton.setOnClickListener {
             Log.d(TAG, "manual link submit clicked")
             submitLink(linkInput.text?.toString().orEmpty(), source = "manual")
         }
@@ -124,11 +128,14 @@ class MainActivity : AppCompatActivity() {
     private fun loadConfigFromToken(token: String) {
         clearError(); showState(AppUiState.ServerSelectionState)
         lifecycleScope.launch {
+            setLoading(true)
             val deviceId = DeviceIdentity.getOrCreate(this@MainActivity)
             val backendUrl = readBackendUrl()
             Log.d(TAG, "resolve-token start backendUrl=$backendUrl hasDeviceId=${deviceId.isNotBlank()}")
             try {
-                val result = ZootApiClient.resolveToken(token, deviceId, "Android device", backendUrl)
+                val result = withContext(Dispatchers.IO) {
+                    ZootApiClient.resolveToken(token, deviceId, "Android device", backendUrl)
+                }
                 resolveResult = result
                 val servers = result.servers.map { UiMapper.toUiServer(it) }
                 Log.d(TAG, "resolve-token success servers=${servers.size}")
@@ -143,6 +150,8 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "resolve-token failed type=${e::class.java.simpleName} message=${safeErrorMessage(e)}")
                 showState(AppUiState.StartState)
                 showError(mapResolveError(e))
+            } finally {
+                setLoading(false)
             }
         }
     }
@@ -258,6 +267,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showError(m: String) { errorCard.visibility = View.VISIBLE; errorText.text = m }
     private fun clearError() { errorCard.visibility = View.GONE; errorText.text = "" }
+
+    private fun setLoading(isLoading: Boolean) {
+        continueButton.isEnabled = !isLoading
+        linkInput.isEnabled = !isLoading
+        continueButton.text = if (isLoading) "Загрузка..." else "Продолжить"
+    }
 
     private fun readBackendUrl(): String {
         val prefs = getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE)
