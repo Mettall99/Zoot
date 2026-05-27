@@ -54,8 +54,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.wireguard.android:tunnel:1.0.20211029")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("com.google.code.gson:gson:2.11.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")
-    testImplementation("org.json:json:20240303")
 }

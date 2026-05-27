@@ -6,9 +6,11 @@ import com.zooot.vpn.selector.Proto
 import com.zooot.vpn.selector.ServerCandidate
 import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
-import org.json.JSONArray
-import org.json.JSONObject
 import android.util.Log
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -25,7 +27,11 @@ object ZootApiClient {
         return parseResult(response)
     }
     fun buildResolveTokenBody(token: String, deviceId: String, deviceName: String): String =
-        JSONObject().put("token", token).put("device_id", deviceId).put("device_name", deviceName).toString()
+        JsonObject().apply {
+            addProperty("token", token)
+            addProperty("device_id", deviceId)
+            addProperty("device_name", deviceName)
+        }.toString()
 
     private fun postJson(endpoint: String, body: String): String {
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -45,15 +51,15 @@ object ZootApiClient {
     }
 
     private fun parseResult(rawJson: String): ResolveTokenResult {
-        val root = JSONObject(rawJson)
+        val root = JsonParser.parseString(rawJson).takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
         val preferredCountry = root.optString("preferred_country", "")
-        val userEmail = root.optJSONObject("user")?.optString("email", "").orEmpty()
-        val tariffTitle = root.optJSONObject("tariff")?.optString("title", "").orEmpty()
-        val serversJson = root.optJSONArray("servers") ?: JSONArray()
+        val userEmail = root.optObject("user")?.optString("email", "").orEmpty()
+        val tariffTitle = root.optObject("tariff")?.optString("title", "").orEmpty()
+        val serversJson = root.optArray("servers") ?: JsonArray()
         val servers = mutableListOf<ServerCandidate>()
-        Log.d(TAG, "resolve-token parse: servers_count=${serversJson.length()}")
-        for (i in 0 until serversJson.length()) {
-            val server = serversJson.getJSONObject(i)
+        Log.d(TAG, "resolve-token parse: servers_count=${serversJson.size()}")
+        for (i in 0 until serversJson.size()) {
+            val server = serversJson[i].takeIf { it.isJsonObject }?.asJsonObject ?: continue
             val serverCountry = server.optString("country", preferredCountry)
             val serverId = server.optString("id", server.optString("name", "unknown"))
             val loadPercent = server.optInt("load_percent", 50)
@@ -62,28 +68,28 @@ object ZootApiClient {
             val ip = server.optString("ip", server.optString("host", ""))
 
             val protocols = mutableListOf<ServerProtocol>()
-            val protocolItems = server.optJSONArray("protocols") ?: JSONArray()
+            val protocolItems = server.optArray("protocols") ?: JsonArray()
             val protocolTypes = mutableListOf<String>()
-            for (p in 0 until protocolItems.length()) {
-                val item = protocolItems.get(p)
+            for (p in 0 until protocolItems.size()) {
+                val item = protocolItems[p]
                 when (item) {
-                    is String -> {
-                        val proto = protoFromApi(item) ?: continue
+                    is JsonElement -> if (item.isJsonPrimitive && item.asJsonPrimitive.isString) {
+                        val proto = protoFromApi(item.asString) ?: continue
                         protocols += ServerProtocol(proto, HealthStatus.HEALTHY, "", null, null, null)
                         protocolTypes += proto.name.lowercase()
-                    }
-                    is JSONObject -> {
-                        val protoName = item.optString("protocol", item.optString("type", ""))
+                    } else if (item.isJsonObject) {
+                        val obj = item.asJsonObject
+                        val protoName = obj.optString("protocol", obj.optString("type", ""))
                         val proto = protoFromApi(protoName) ?: continue
-                        val rawConfig = if (item.has("config") && !item.isNull("config")) item.optString("config", "") else ""
+                        val rawConfig = if (obj.hasNonNull("config")) obj.optString("config", "") else ""
                         val config = rawConfig.takeIf { isValidConfig(it) } ?: ""
-                        val healthRaw = item.optString("health_status", item.optString("health", "healthy"))
+                        val healthRaw = obj.optString("health_status", obj.optString("health", "healthy"))
                         val health = if (healthRaw.lowercase() == "failed") HealthStatus.FAILED else HealthStatus.HEALTHY
-                        val configUrl = item.optString("config_url", "")
-                        val port = if (item.has("port") && !item.isNull("port")) item.optInt("port") else null
-                        val configSource = item.optString("config_source", "").ifBlank { null }
+                        val configUrl = obj.optString("config_url", "")
+                        val port = if (obj.hasNonNull("port")) obj.optInt("port") else null
+                        val configSource = obj.optString("config_source", "").ifBlank { null }
                         val configAvailable = isValidConfig(config)
-                        val configLen = if (configAvailable) config!!.length else 0
+                        val configLen = if (configAvailable) config.length else 0
                         Log.d(TAG, "resolve-token parse: wireguard server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
                         protocols += ServerProtocol(proto, health, configUrl, config, port, configSource)
                         protocolTypes += proto.name.lowercase()
@@ -92,7 +98,7 @@ object ZootApiClient {
             }
             if (protocols.isEmpty()) protocols += ServerProtocol(Proto.AMNEZIAWG, HealthStatus.HEALTHY, "")
             val wgHasConfig = protocols.any { it.type == Proto.WIREGUARD && isValidConfig(it.config) }
-            Log.d(TAG, "resolve-token parse: server_id=$serverId protocols_count=${protocolItems.length()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig")
+            Log.d(TAG, "resolve-token parse: server_id=$serverId protocols_count=${protocolItems.size()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig")
 
             servers += ServerCandidate(serverId, serverCountry, ServerStatus.ONLINE, loadPercent, latencyMs, protocols, city, ip)
         }
@@ -108,6 +114,16 @@ object ZootApiClient {
         else -> null
     }
 }
+
+private fun JsonObject.hasNonNull(name: String): Boolean = has(name) && !get(name).isJsonNull
+private fun JsonObject.optString(name: String, fallback: String): String =
+    get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: fallback
+private fun JsonObject.optInt(name: String, fallback: Int): Int =
+    get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt ?: fallback
+private fun JsonObject.optArray(name: String): JsonArray? =
+    get(name)?.takeIf { it.isJsonArray }?.asJsonArray
+private fun JsonObject.optObject(name: String): JsonObject? =
+    get(name)?.takeIf { it.isJsonObject }?.asJsonObject
 
 class ApiHttpException(val code: Int, body: String): IOException("Backend HTTP $code: $body")
 
