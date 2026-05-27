@@ -15,7 +15,7 @@ class WireGuardProtocolAdapter(
 
         internal fun mapConnectFailure(state: Tunnel.State?, error: Exception): ConnectResult {
             if (state == Tunnel.State.UP) return ConnectResult(true, "Connected")
-            return ConnectResult(false, error.message?.take(120) ?: "WireGuard start failed")
+            return ConnectResult(false, "WireGuard start failed")
         }
     }
     override val type: ProtocolType = ProtocolType.WIREGUARD
@@ -29,7 +29,7 @@ class WireGuardProtocolAdapter(
 
     override suspend fun connect(config: VpnConfig): ConnectResult {
         val raw = config.config
-        if (!isValidWireGuardConfig(raw)) return ConnectResult(false, "WireGuard config missing")
+        if (!isValidWireGuardConfig(raw)) return ConnectResult(false, "WireGuard config is not available")
         val wireGuardConfig = raw!!
         Log.d(TAG, "connect: selected protocol=wireguard, config available=true")
         return try {
