@@ -39,9 +39,10 @@ const run = async () => {
     [userId]
   );
 
+  // TODO: replace static geo metadata (country/city/name) with real geo lookup for server endpoint.
   const server = await db.query(
     `INSERT INTO servers (id, name, country_code, city, ip, status, load_percent, max_users, active_users)
-     VALUES (gen_random_uuid(), 'de-frankfurt-1', 'DE', 'Frankfurt', '203.0.113.10', 'online', 20, 500, 120)
+     VALUES (gen_random_uuid(), 'de-frankfurt-1', 'DE', 'Frankfurt', '31.59.45.197', 'online', 20, 500, 120)
      ON CONFLICT DO NOTHING
      RETURNING id`
   );
