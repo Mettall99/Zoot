@@ -21,3 +21,11 @@ node_modules/
 **/node_modules/
 dist/
 .next/
+
+# WireGuard generated artifacts (must stay outside git)
+server-agent/wireguard/generated/
+*.private
+*.key
+*.conf.local
+clients/
+generated/
