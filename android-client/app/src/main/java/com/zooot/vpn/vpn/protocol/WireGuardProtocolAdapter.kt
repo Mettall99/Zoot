@@ -30,9 +30,10 @@ class WireGuardProtocolAdapter(
     override suspend fun connect(config: VpnConfig): ConnectResult {
         val raw = config.config
         if (!isValidWireGuardConfig(raw)) return ConnectResult(false, "WireGuard config missing")
+        val wireGuardConfig = raw!!
         Log.d(TAG, "connect: selected protocol=wireguard, config available=true")
         return try {
-            val parsed = Config.parse(ByteArrayInputStream(raw.toByteArray()))
+            val parsed = Config.parse(ByteArrayInputStream(wireGuardConfig.toByteArray()))
             val state = backend.setState(tunnel, Tunnel.State.UP, parsed)
             Log.d(TAG, "connect: tunnel state result=${state.name}")
             if (state == Tunnel.State.UP) ConnectResult(true, "Connected")
