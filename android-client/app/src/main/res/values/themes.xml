@@ -1,8 +1,12 @@
-<resources>
-    <style name="Theme.Zooot" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryVariant">@color/primaryDark</item>
+﻿<resources>
+    <style name="Theme.Zooot" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/zooot_primary</item>
+        <item name="colorPrimaryVariant">@color/zooot_primary_dark</item>
         <item name="colorOnPrimary">@android:color/white</item>
-        <item name="android:statusBarColor">@color/surfaceBackground</item>
+        <item name="android:windowBackground">@color/zooot_background</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Zooot</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Zooot</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Zooot</item>
     </style>
 </resources>

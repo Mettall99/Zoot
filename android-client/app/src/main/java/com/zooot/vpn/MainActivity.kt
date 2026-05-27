@@ -1,4 +1,4 @@
-package com.zooot.vpn
+﻿package com.zooot.vpn
 
 import android.content.Context
 import android.os.Bundle
@@ -101,13 +101,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun connect() {
         currentSelection ?: return showError("No healthy protocols")
-        FakeVpnProtocolAdapter().start(currentSelection!!.configUrl)
         updateStatus("Connected")
         clearError()
     }
 
     private fun disconnect() {
-        FakeVpnProtocolAdapter().stop()
         updateStatus("Disconnected")
     }
 
@@ -190,3 +188,4 @@ data class UiState(
     val serverIp: String,
     val protocol: String
 )
+

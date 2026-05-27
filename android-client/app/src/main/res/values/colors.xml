@@ -1,15 +1,25 @@
-<resources>
-    <color name="primary">#3858E9</color>
-    <color name="primaryDark">#2641B0</color>
-    <color name="surfaceBackground">#F5F7FC</color>
-    <color name="cardBackground">#FFFFFFFF</color>
+﻿<resources>
+    <!-- Base Zooot palette -->
+    <color name="zooot_primary">#2563EB</color>
+    <color name="zooot_primary_dark">#1D4ED8</color>
+    <color name="zooot_background">#F8FAFC</color>
+
+    <!-- Layout colors required by XML -->
+    <color name="surfaceBackground">#F8FAFC</color>
+
+    <color name="cardBackground">#FFFFFF</color>
     <color name="cardStroke">#E2E8F0</color>
+
     <color name="textPrimary">#0F172A</color>
     <color name="textSecondary">#64748B</color>
-    <color name="success">#15803D</color>
-    <color name="neutral">#64748B</color>
-    <color name="error">#B91C1C</color>
-    <color name="errorBackground">#FEE2E2</color>
+
+    <color name="errorBackground">#FEF2F2</color>
     <color name="errorStroke">#FCA5A5</color>
-    <color name="errorText">#991B1B</color>
+    <color name="errorText">#B91C1C</color>
+
+    <!-- Kotlin aliases used by MainActivity.kt -->
+    <color name="primary">#2563EB</color>
+    <color name="success">#16A34A</color>
+    <color name="neutral">#64748B</color>
+    <color name="error">#DC2626</color>
 </resources>
