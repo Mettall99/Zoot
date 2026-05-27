@@ -17,9 +17,9 @@ class WireGuardMvpSelectionTest {
     }
 
     @Test
-    fun emptyConfigDoesNotCrash() {
-        val servers = listOf(ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(ServerProtocol(Proto.WIREGUARD, HealthStatus.HEALTHY, "", ""))))
+    fun nullStringConfigDoesNotSelectWireGuard() {
+        val servers = listOf(ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(ServerProtocol(Proto.WIREGUARD, HealthStatus.HEALTHY, "", "null"))))
         val sel = ProtocolSelector.select(servers, "DE", NetworkType.WIFI, emptyMap())
-        assertEquals(Proto.WIREGUARD, sel?.protocol)
+        assertEquals(null, sel)
     }
 }

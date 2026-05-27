@@ -17,6 +17,8 @@ const authSchema = z.object({ email: z.string().email(), password: z.string().mi
 const resolveTokenSchema = z.object({ token: z.string().min(1), device_id: z.string().optional(), device_name: z.string().optional() });
 const MAX_WIREGUARD_CONFIG_BYTES = 64 * 1024;
 
+const isValidConfig = (config: unknown): config is string => typeof config === 'string' && config.trim().length > 0 && config.trim().toLowerCase() !== 'null';
+
 const readWireGuardClientConfig = async (): Promise<string | null> => {
   const path = process.env.WIREGUARD_CLIENT_CONFIG_PATH?.trim();
   if (!path) return null;
@@ -118,13 +120,24 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
       if (isProvisioningEnabled()) {
         try {
           const result = await getOrCreateWireGuardDeviceConfig(db, row.user_id, r.id, deviceId, deviceName);
-          wireguardResponse = { config: result.config, config_source: result.configSource };
+          if (isValidConfig(result.config)) {
+            wireguardResponse = { config: result.config, config_source: result.configSource };
+          } else {
+            console.warn('wireguard device config unavailable, using fallback');
+            wireguardResponse = isValidConfig(demoWireguardConfig)
+              ? { config: demoWireguardConfig, config_source: 'demo_fallback' }
+              : { config: null, config_source: null };
+          }
         } catch {
-          wireguardResponse = { config: demoWireguardConfig, config_source: 'demo_fallback' };
+          wireguardResponse = isValidConfig(demoWireguardConfig)
+            ? { config: demoWireguardConfig, config_source: 'demo_fallback' }
+            : { config: null, config_source: null };
         }
       } else {
         // TODO(android): all clients should send stable generated device_id.
-        wireguardResponse = { config: demoWireguardConfig, config_source: 'demo_fallback' };
+        wireguardResponse = isValidConfig(demoWireguardConfig)
+          ? { config: demoWireguardConfig, config_source: 'demo_fallback' }
+          : { config: null, config_source: null };
       }
     }
     serversMap.get(r.id).protocols.push({

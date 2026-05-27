@@ -14,6 +14,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object ZootApiClient {
+    private fun isValidConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
+
     private const val TAG = "ZootApiClient"
     val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
 
@@ -71,7 +73,8 @@ object ZootApiClient {
                     is JSONObject -> {
                         val protoName = item.optString("protocol", item.optString("type", ""))
                         val proto = protoFromApi(protoName) ?: continue
-                        val config = item.optString("config", "").ifBlank { null }
+                        val rawConfig = if (item.has("config") && !item.isNull("config")) item.optString("config", "") else ""
+                        val config = rawConfig.takeIf { isValidConfig(it) } ?: ""
                         val healthRaw = item.optString("health_status", item.optString("health", "healthy"))
                         val health = if (healthRaw.lowercase() == "failed") HealthStatus.FAILED else HealthStatus.HEALTHY
                         val configUrl = item.optString("config_url", "")
@@ -82,7 +85,7 @@ object ZootApiClient {
                 }
             }
             if (protocols.isEmpty()) protocols += ServerProtocol(Proto.AMNEZIAWG, HealthStatus.HEALTHY, "")
-            val wgHasConfig = protocols.any { it.type == Proto.WIREGUARD && !it.config.isNullOrBlank() }
+            val wgHasConfig = protocols.any { it.type == Proto.WIREGUARD && isValidConfig(it.config) }
             Log.d(TAG, "resolve-token parse: server_id=$serverId protocols_count=${protocolItems.length()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig")
 
             servers += ServerCandidate(serverId, serverCountry, ServerStatus.ONLINE, loadPercent, latencyMs, protocols, city, ip)

@@ -10,7 +10,7 @@ import org.junit.Test
 
 class NewFlowUnitTest {
     @Test fun manualLinkParsing() { assertEquals("demo-token", LinkInputParser.parseToken("zoootconf://demo-token")) }
-    @Test fun invalidLinkValidation() { assertFalse(LinkInputParser.validate("http://bad").valid) }
+    @Test fun invalidLinkValidation() { val r = LinkInputParser.validate("http://bad"); assertFalse(r.valid); assertEquals("Неверный формат ссылки", r.error) }
     @Test fun deepLinkStartsResolveTokenFlowParserReady() { assertNotNull(LinkInputParser.parseToken("zoootconf://demo-token")) }
     @Test fun recommendedServerChoice() {
         val servers = listOf(
@@ -18,6 +18,13 @@ class NewFlowUnitTest {
             UiMapper.toUiServer(ServerCandidate("2","DE",ServerStatus.ONLINE,20,20,listOf(ServerProtocol(Proto.WIREGUARD,HealthStatus.HEALTHY,"", "b")),"Berlin","2.2.2.2"))
         )
         assertEquals("2", ServerRecommendation.pick(servers)?.id)
+    }
+    @Test fun nullStringWireGuardConfigNotRecommended() {
+        val servers = listOf(
+            UiServer("1","DE","Frankfurt","1.1.1.1",20,20,true,"null"),
+            UiServer("2","DE","Berlin","2.2.2.2",30,30,true,"")
+        )
+        assertEquals("1", ServerRecommendation.pick(servers)?.id)
     }
     @Test fun timerFormattingWorks() { assertEquals("00:00:05", TimerFormatter.formatElapsed(5000)) }
 }
