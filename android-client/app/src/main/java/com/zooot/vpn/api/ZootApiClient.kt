@@ -8,7 +8,6 @@ import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
 import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONTokener
 import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL

@@ -70,4 +70,16 @@ class ProtocolConfigParsingTest {
         val wg = result.servers.first().protocols.first { it.type == Proto.WIREGUARD }
         assertEquals("", wg.config)
     }
+    @Test
+    fun missingConfigFieldParsedAsUnavailable() {
+        val raw = """
+            {"preferred_country":"DE","servers":[{"id":"srv1","country":"DE","protocols":[{"type":"wireguard"}]}]}
+        """.trimIndent()
+        val method = ZootApiClient::class.java.getDeclaredMethod("parseResult", String::class.java)
+        method.isAccessible = true
+        val result = method.invoke(ZootApiClient, raw) as ResolveTokenResult
+        val wg = result.servers.first().protocols.first { it.type == Proto.WIREGUARD }
+        assertEquals("", wg.config)
+    }
+
 }
