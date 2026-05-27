@@ -69,7 +69,7 @@ object ZootApiClient {
                 when (item) {
                     is String -> {
                         val proto = protoFromApi(item) ?: continue
-                        protocols += ServerProtocol(proto, HealthStatus.HEALTHY, "", null, null)
+                        protocols += ServerProtocol(proto, HealthStatus.HEALTHY, "", null, null, null)
                         protocolTypes += proto.name.lowercase()
                     }
                     is JSONObject -> {
@@ -81,7 +81,11 @@ object ZootApiClient {
                         val health = if (healthRaw.lowercase() == "failed") HealthStatus.FAILED else HealthStatus.HEALTHY
                         val configUrl = item.optString("config_url", "")
                         val port = if (item.has("port") && !item.isNull("port")) item.optInt("port") else null
-                        protocols += ServerProtocol(proto, health, configUrl, config, port)
+                        val configSource = item.optString("config_source", "").ifBlank { null }
+                        val configAvailable = isValidConfig(config)
+                        val configLen = if (configAvailable) config!!.length else 0
+                        Log.d(TAG, "resolve-token parse: wireguard server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
+                        protocols += ServerProtocol(proto, health, configUrl, config, port, configSource)
                         protocolTypes += proto.name.lowercase()
                     }
                 }

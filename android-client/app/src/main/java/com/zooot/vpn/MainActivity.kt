@@ -214,7 +214,7 @@ class MainActivity : AppCompatActivity() {
         ).forEach { p ->
             val card = layoutInflater.inflate(R.layout.item_simple_card, protocolsList, false) as MaterialCardView
             card.findViewById<TextView>(R.id.cardTitle).text = p.name
-            card.findViewById<TextView>(R.id.cardSubtitle).text = if (p.enabled) "Доступно" else "Скоро"
+            card.findViewById<TextView>(R.id.cardSubtitle).text = if (p.enabled) { val src = server.wireGuardConfigSource?.let { " · Config source: $it" } ?: ""; "Доступно$src" } else "Скоро"
             card.alpha = if (p.enabled) 1f else 0.6f
             if (p.enabled) card.setOnClickListener { selectedProtocol = p; renderProtocols(server) }
             card.isChecked = selectedProtocol?.name == p.name
@@ -364,7 +364,7 @@ class MainActivity : AppCompatActivity() {
 }
 
 sealed class AppUiState { object StartState: AppUiState(); object ServerSelectionState: AppUiState(); object ConnectionSetupState: AppUiState(); object ConnectedState: AppUiState() }
-data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?)
+data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?, val wireGuardConfigSource: String?)
 data class UiProtocolOption(val name: String, val enabled: Boolean, val config: String?) { companion object { fun wireguard(config: String?) = UiProtocolOption("WireGuard", isValidWireGuardConfig(config), config); fun disabled(name: String)=UiProtocolOption(name,false,null); private fun isValidWireGuardConfig(config: String?) = !config.isNullOrBlank() && config.trim().lowercase() != "null" } }
 data class ConnectionSession(val server: UiServer, val protocol: String, val startedAtMs: Long)
 
@@ -384,7 +384,7 @@ object LinkFlowContract {
 }
 object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && !it.wireGuardConfig.isNullOrBlank() && it.wireGuardConfig.trim().lowercase() != "null" }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
 object TimerFormatter { fun formatElapsed(ms: Long): String { val total = ms/1000; val h=total/3600; val m=(total%3600)/60; val s=total%60; return "%02d:%02d:%02d".format(h,m,s) } }
-object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate)= UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}?.config) }
+object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate): UiServer { val wg = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; return UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,wg?.config,wg?.configSource) } }
 
 data class TrafficStats(val rx: String, val tx: String)
 interface VpnTrafficStatsProvider { fun read(): TrafficStats }

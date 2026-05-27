@@ -5,7 +5,7 @@ enum class HealthStatus { HEALTHY, FAILED }
 enum class NetworkType { WIFI, MOBILE }
 enum class Proto { AMNEZIAWG, XRAY_VLESS_REALITY, WIREGUARD, OPENVPN_UDP, OPENVPN_TCP }
 
-data class ServerProtocol(val type: Proto, val health: HealthStatus, val configUrl: String, val config: String? = null, val port: Int? = null)
+data class ServerProtocol(val type: Proto, val health: HealthStatus, val configUrl: String, val config: String? = null, val port: Int? = null, val configSource: String? = null)
 data class ServerCandidate(val serverId: String, val country: String, val status: ServerStatus, val loadPercent: Int, val latencyMs: Int, val protocols: List<ServerProtocol>, val city: String = "", val serverIp: String = "")
 data class HistoryKey(val network: NetworkType, val serverId: String, val proto: Proto)
 data class HistoryVal(val success: Boolean, val failurePenalty: Int = 0)
