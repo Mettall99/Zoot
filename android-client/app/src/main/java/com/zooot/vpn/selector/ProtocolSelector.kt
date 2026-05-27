@@ -5,11 +5,11 @@ enum class HealthStatus { HEALTHY, FAILED }
 enum class NetworkType { WIFI, MOBILE }
 enum class Proto { AMNEZIAWG, XRAY_VLESS_REALITY, WIREGUARD, OPENVPN_UDP, OPENVPN_TCP }
 
-data class ServerProtocol(val type: Proto, val health: HealthStatus, val configUrl: String, val config: String? = null)
+data class ServerProtocol(val type: Proto, val health: HealthStatus, val configUrl: String, val config: String? = null, val port: Int? = null)
 data class ServerCandidate(val serverId: String, val country: String, val status: ServerStatus, val loadPercent: Int, val latencyMs: Int, val protocols: List<ServerProtocol>, val city: String = "", val serverIp: String = "")
 data class HistoryKey(val network: NetworkType, val serverId: String, val proto: Proto)
 data class HistoryVal(val success: Boolean, val failurePenalty: Int = 0)
-data class Selection(val serverId: String, val protocol: Proto, val configUrl: String, val score: Int, val config: String? = null)
+data class Selection(val serverId: String, val protocol: Proto, val configUrl: String, val score: Int, val config: String? = null, val port: Int? = null)
 
 object ProtocolSelector {
     private val protocolScore = mapOf(Proto.AMNEZIAWG to 50, Proto.XRAY_VLESS_REALITY to 45, Proto.WIREGUARD to 35, Proto.OPENVPN_UDP to 25, Proto.OPENVPN_TCP to 15)
@@ -21,7 +21,7 @@ object ProtocolSelector {
             .flatMap { server ->
                 server.protocols.asSequence()
                     .filter { it.type == Proto.WIREGUARD && it.health != HealthStatus.FAILED && !it.config.isNullOrBlank() }
-                    .map { sp -> Selection(server.serverId, sp.type, sp.configUrl, Int.MAX_VALUE, sp.config) }
+                    .map { sp -> Selection(server.serverId, sp.type, sp.configUrl, Int.MAX_VALUE, sp.config, sp.port) }
             }
             .firstOrNull()
         if (wireguardMvp != null) return wireguardMvp
@@ -47,7 +47,7 @@ object ProtocolSelector {
                     else -> -10
                 }
                 val score = (protocolScore[sp.type] ?: 0) + loadScore + latencyScore + historyScore - (h?.failurePenalty ?: 0)
-                val candidate = Selection(server.serverId, sp.type, sp.configUrl, score, sp.config)
+                val candidate = Selection(server.serverId, sp.type, sp.configUrl, score, sp.config, sp.port)
                 if (best == null || candidate.score > best.score) best = candidate
             }
             if (best != null) return best
