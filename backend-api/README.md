@@ -48,3 +48,15 @@ Behavior:
 - Volumes: clients dir and scripts dir must be mounted to backend runtime.
 - Verify: call resolve-token with `device_id`, check `wg show`, and query `SELECT * FROM wireguard_devices;`.
 - Revoke: `server-agent/wireguard/revoke-client.sh <client-name>`.
+
+
+## Seed idempotency check
+Run seed twice and verify there is still only one Frankfurt demo server row:
+
+```bash
+npm run db:seed
+npm run db:seed
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM servers WHERE ip = '31.59.45.197' OR name = 'de-frankfurt-1';"
+```
+
+Expected result: `count = 1`.

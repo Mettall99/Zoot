@@ -40,16 +40,44 @@ const run = async () => {
   );
 
   // TODO: replace static geo metadata (country/city/name) with real geo lookup for server endpoint.
-  const server = await db.query(
-    `INSERT INTO servers (id, name, country_code, city, ip, status, load_percent, max_users, active_users)
-     VALUES (gen_random_uuid(), 'de-frankfurt-1', 'DE', 'Frankfurt', '31.59.45.197', 'online', 20, 500, 120)
-     ON CONFLICT DO NOTHING
-     RETURNING id`
+  const serverName = 'de-frankfurt-1';
+  const serverIp = '31.59.45.197';
+
+  const existingServer = await db.query(
+    `SELECT id
+     FROM servers
+     WHERE ip = $1 OR name = $2
+     ORDER BY CASE WHEN ip = $1 THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [serverIp, serverName]
   );
 
-  const serverId = server.rowCount
-    ? server.rows[0].id
-    : (await db.query(`SELECT id FROM servers WHERE name='de-frankfurt-1' LIMIT 1`)).rows[0].id;
+  let serverId: string;
+  if (existingServer.rowCount) {
+    const updated = await db.query(
+      `UPDATE servers
+       SET name = $2,
+           country_code = 'DE',
+           city = 'Frankfurt',
+           ip = $1,
+           status = 'online',
+           load_percent = 20,
+           max_users = 500,
+           active_users = 120
+       WHERE id = $3
+       RETURNING id`,
+      [serverIp, serverName, existingServer.rows[0].id]
+    );
+    serverId = updated.rows[0].id;
+  } else {
+    const inserted = await db.query(
+      `INSERT INTO servers (id, name, country_code, city, ip, status, load_percent, max_users, active_users)
+       VALUES (gen_random_uuid(), $1, 'DE', 'Frankfurt', $2, 'online', 20, 500, 120)
+       RETURNING id`,
+      [serverName, serverIp]
+    );
+    serverId = inserted.rows[0].id;
+  }
 
   for (const [type, priority, port] of [
     ['amneziawg', 1, 51820],
