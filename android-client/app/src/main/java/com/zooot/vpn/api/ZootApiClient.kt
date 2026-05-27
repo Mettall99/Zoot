@@ -8,7 +8,6 @@ import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
 import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONTokener
 import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
@@ -74,7 +73,7 @@ object ZootApiClient {
                         val protoName = item.optString("protocol", item.optString("type", ""))
                         val proto = protoFromApi(protoName) ?: continue
                         val rawConfig = if (item.has("config") && !item.isNull("config")) item.optString("config", "") else ""
-                        val config = rawConfig.takeIf { isValidConfig(it) }
+                        val config = rawConfig.takeIf { isValidConfig(it) } ?: ""
                         val healthRaw = item.optString("health_status", item.optString("health", "healthy"))
                         val health = if (healthRaw.lowercase() == "failed") HealthStatus.FAILED else HealthStatus.HEALTHY
                         val configUrl = item.optString("config_url", "")

@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                 renderServers(servers)
             } catch (e: Exception) {
                 showState(AppUiState.StartState)
-                showError("Не удалось загрузить конфигурацию")
+                showError("Не удалось подключиться к серверу")
             }
         }
     }
@@ -137,6 +137,7 @@ class MainActivity : AppCompatActivity() {
     private fun showConnectionScreen() {
         val server = selectedServer ?: return showError("Выберите сервер")
         selectedProtocol = UiProtocolOption.wireguard(server.wireGuardConfig)
+        if (!selectedProtocol!!.enabled) return showError("Нет доступной WireGuard-конфигурации")
         renderProtocols(server)
         showState(AppUiState.ConnectionSetupState)
     }
@@ -160,7 +161,7 @@ class MainActivity : AppCompatActivity() {
     private fun connect() {
         val server = selectedServer ?: return showError("Выберите сервер")
         val protocol = selectedProtocol ?: return showError("Выберите протокол")
-        if (protocol.name != "WireGuard" || protocol.config.isNullOrBlank()) return showError("Для выбранного сервера нет доступной конфигурации WireGuard")
+        if (protocol.name != "WireGuard" || protocol.config.isNullOrBlank() || protocol.config.trim().lowercase() == "null") return showError("WireGuard config is not available")
         val intent = VpnService.prepare(this)
         if (intent != null) vpnPermissionLauncher.launch(intent) else connectInternal()
     }
