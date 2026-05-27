@@ -1,249 +1,250 @@
-﻿package com.zooot.vpn
+package com.zooot.vpn
 
 import android.content.Context
 import android.net.VpnService
 import android.os.Bundle
-import android.util.Log
+import android.os.SystemClock
 import android.view.View
-import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import com.zooot.vpn.api.DeviceIdentity
 import com.zooot.vpn.api.ResolveTokenResult
 import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.deeplink.DeepLinkParser
-import com.zooot.vpn.selector.NetworkType
-import com.zooot.vpn.selector.ProtocolSelector
-import com.zooot.vpn.selector.Selection
-import com.zooot.vpn.vpn.protocol.ConnectResult
 import com.zooot.vpn.vpn.protocol.FakeVpnProtocolAdapter
 import com.zooot.vpn.vpn.protocol.ProtocolType
 import com.zooot.vpn.vpn.protocol.VpnConfig
 import com.zooot.vpn.vpn.protocol.VpnProtocolAdapter
 import com.zooot.vpn.vpn.protocol.WireGuardProtocolAdapter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
-    companion object {
-        private const val TAG = "MainActivity"
-    }
-    private lateinit var backendUrlInput: EditText
-    private lateinit var tokenValue: TextView
-    private lateinit var emailValue: TextView
-    private lateinit var tariffValue: TextView
-    private lateinit var countryValue: TextView
-    private lateinit var cityValue: TextView
-    private lateinit var serverIpValue: TextView
-    private lateinit var protocolValue: TextView
-    private lateinit var configStatusValue: TextView
-    private lateinit var statusBadge: TextView
-    private lateinit var errorCard: MaterialCardView
-    private lateinit var errorValue: TextView
-
-    private var currentToken: String = ""
-    private var currentBackendUrl: String = ""
-    private var currentSelection: Selection? = null
-    private var lastLoadFailed = false
     private lateinit var wireGuardAdapter: WireGuardProtocolAdapter
     private val fakeAdapter = FakeVpnProtocolAdapter(ProtocolType.AMNEZIAWG)
+    private var selectedServer: UiServer? = null
+    private var selectedProtocol: UiProtocolOption? = null
+    private var resolveResult: ResolveTokenResult? = null
+    private var session: ConnectionSession? = null
+    private var timerJob: Job? = null
+    private lateinit var trafficProvider: VpnTrafficStatsProvider
+
+    private lateinit var startContainer: View
+    private lateinit var serverSelectionContainer: View
+    private lateinit var connectionContainer: View
+    private lateinit var connectedContainer: View
+    private lateinit var linkInputLayout: TextInputLayout
+    private lateinit var linkInput: TextInputEditText
+    private lateinit var serversList: LinearLayout
+    private lateinit var protocolsList: LinearLayout
+    private lateinit var errorCard: MaterialCardView
+    private lateinit var errorText: TextView
+    private lateinit var connectedDuration: TextView
+    private lateinit var connectedTrafficRx: TextView
+    private lateinit var connectedTrafficTx: TextView
+
+    private var currentState: AppUiState = AppUiState.StartState
     private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (it.resultCode == RESULT_OK) { connectInternal() } else { showError("VPN permission denied") }
+        if (it.resultCode == RESULT_OK) connectInternal() else showError("VPN permission denied")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        bindViews()
         wireGuardAdapter = WireGuardProtocolAdapter(this)
+        trafficProvider = NoopTrafficStatsProvider
+        bindViews()
+        setupActions()
 
-        currentBackendUrl = readBackendUrl()
-        backendUrlInput.setText(currentBackendUrl)
-        findViewById<MaterialButton>(R.id.saveUrlButton).setOnClickListener {
-            val input = backendUrlInput.text.toString().trim()
-            if (input.isNotBlank()) {
-                currentBackendUrl = input
-                saveBackendUrl(input)
-            }
+        val deepLink = intent?.dataString.orEmpty()
+        val token = LinkInputParser.parseToken(deepLink)
+        if (token != null) {
+            linkInput.setText(deepLink)
+            resolveTokenAndOpenServers(token)
+        } else {
+            showState(AppUiState.StartState)
         }
-
-        findViewById<MaterialButton>(R.id.loadConfigButton).setOnClickListener { loadConfig(auto = false) }
-        findViewById<MaterialButton>(R.id.connectButton).setOnClickListener { connect() }
-        findViewById<MaterialButton>(R.id.disconnectButton).setOnClickListener { disconnect() }
-        findViewById<MaterialButton>(R.id.retryButton).setOnClickListener { if (lastLoadFailed) loadConfig(auto = false) }
-
-        currentToken = DeepLinkParser.extractToken(intent?.dataString.orEmpty()).orEmpty()
-        tokenValue.text = readable(currentToken)
-
-        if (currentToken.isNotBlank()) loadConfig(auto = true) else updateStatus("Ready")
-        clearError()
     }
 
     private fun bindViews() {
-        backendUrlInput = findViewById(R.id.backendUrlInput)
-        tokenValue = findViewById(R.id.tokenValue)
-        emailValue = findViewById(R.id.emailValue)
-        tariffValue = findViewById(R.id.tariffValue)
-        countryValue = findViewById(R.id.countryValue)
-        cityValue = findViewById(R.id.cityValue)
-        serverIpValue = findViewById(R.id.serverIpValue)
-        protocolValue = findViewById(R.id.protocolValue)
-        configStatusValue = findViewById(R.id.configStatusValue)
-        statusBadge = findViewById(R.id.statusBadge)
+        startContainer = findViewById(R.id.startContainer)
+        serverSelectionContainer = findViewById(R.id.serverSelectionContainer)
+        connectionContainer = findViewById(R.id.connectionContainer)
+        connectedContainer = findViewById(R.id.connectedContainer)
+        linkInputLayout = findViewById(R.id.linkInputLayout)
+        linkInput = findViewById(R.id.linkInput)
+        serversList = findViewById(R.id.serversList)
+        protocolsList = findViewById(R.id.protocolsList)
         errorCard = findViewById(R.id.errorCard)
-        errorValue = findViewById(R.id.errorValue)
-        render(UiState("", "", "", "", "", "", ""))
+        errorText = findViewById(R.id.errorValue)
+        connectedDuration = findViewById(R.id.connectedDuration)
+        connectedTrafficRx = findViewById(R.id.connectedTrafficRx)
+        connectedTrafficTx = findViewById(R.id.connectedTrafficTx)
     }
 
-    private fun loadConfig(auto: Boolean) {
-        if (currentToken.isBlank()) return showError("Invalid token")
-        updateStatus("Loading")
-        clearError()
-        Thread {
-            try {
-                val deviceId = com.zooot.vpn.api.DeviceIdentity.getOrCreate(this)
-                val result = ZootApiClient.resolveToken(currentToken, deviceId, "Android device", currentBackendUrl)
-                val state = mapConfig(result)
-                runOnUiThread {
-                    render(state)
-                    updateStatus(if (auto) "ReadyToConnect" else "ReadyToConnect")
-                    lastLoadFailed = false
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    lastLoadFailed = true
-                    updateStatus("Error")
-                    showError(mapErrorMessage(e.message.orEmpty()))
-                }
+    private fun setupActions() {
+        findViewById<MaterialButton>(R.id.continueButton).setOnClickListener {
+            val parsed = LinkInputParser.validate(linkInput.text?.toString().orEmpty())
+            if (!parsed.valid) {
+                linkInputLayout.error = parsed.error
+                return@setOnClickListener
             }
-        }.start()
+            linkInputLayout.error = null
+            resolveTokenAndOpenServers(parsed.token!!)
+        }
+        findViewById<MaterialButton>(R.id.selectServerButton).setOnClickListener { showConnectionScreen() }
+        findViewById<MaterialButton>(R.id.backToServersButton).setOnClickListener { showState(AppUiState.ServerSelectionState) }
+        findViewById<MaterialButton>(R.id.connectButton).setOnClickListener { connect() }
+        findViewById<MaterialButton>(R.id.disconnectButton).setOnClickListener { disconnect() }
+    }
+
+    private fun resolveTokenAndOpenServers(token: String) {
+        clearError(); showState(AppUiState.ServerSelectionState)
+        lifecycleScope.launch {
+            try {
+                val result = ZootApiClient.resolveToken(token, DeviceIdentity.getOrCreate(this@MainActivity), "Android device", readBackendUrl())
+                resolveResult = result
+                val servers = result.servers.map { UiMapper.toUiServer(it) }
+                selectedServer = ServerRecommendation.pick(servers)
+                renderServers(servers)
+            } catch (e: Exception) {
+                showState(AppUiState.StartState)
+                showError("Не удалось загрузить конфигурацию")
+            }
+        }
+    }
+
+    private fun renderServers(servers: List<UiServer>) {
+        serversList.removeAllViews()
+        servers.forEach { s ->
+            val card = layoutInflater.inflate(R.layout.item_simple_card, serversList, false) as MaterialCardView
+            card.findViewById<TextView>(R.id.cardTitle).text = "${s.country} · ${s.city}"
+            card.findViewById<TextView>(R.id.cardSubtitle).text = "${s.serverIp} • load ${s.loadPercent}% • ${if (s.online) "online" else "offline"}"
+            card.isChecked = selectedServer?.id == s.id
+            card.setOnClickListener { selectedServer = s; renderServers(servers) }
+            serversList.addView(card)
+        }
+    }
+
+    private fun showConnectionScreen() {
+        val server = selectedServer ?: return showError("Выберите сервер")
+        selectedProtocol = UiProtocolOption.wireguard(server.wireGuardConfig)
+        renderProtocols(server)
+        showState(AppUiState.ConnectionSetupState)
+    }
+
+    private fun renderProtocols(server: UiServer) {
+        protocolsList.removeAllViews()
+        listOf(
+            UiProtocolOption.wireguard(server.wireGuardConfig), UiProtocolOption.disabled("AmneziaWG"), UiProtocolOption.disabled("VLESS Reality"),
+            UiProtocolOption.disabled("OpenVPN UDP"), UiProtocolOption.disabled("OpenVPN TCP")
+        ).forEach { p ->
+            val card = layoutInflater.inflate(R.layout.item_simple_card, protocolsList, false) as MaterialCardView
+            card.findViewById<TextView>(R.id.cardTitle).text = p.name
+            card.findViewById<TextView>(R.id.cardSubtitle).text = if (p.enabled) "Доступно" else "Скоро"
+            card.alpha = if (p.enabled) 1f else 0.6f
+            if (p.enabled) card.setOnClickListener { selectedProtocol = p; renderProtocols(server) }
+            card.isChecked = selectedProtocol?.name == p.name
+            protocolsList.addView(card)
+        }
     }
 
     private fun connect() {
-        val selection = currentSelection ?: return showError("No healthy protocols")
-        if (selection.protocol == com.zooot.vpn.selector.Proto.WIREGUARD && !selection.config.isNullOrBlank()) {
-            val intent = VpnService.prepare(this)
-            if (intent != null) { vpnPermissionLauncher.launch(intent); return }
-        }
-        connectInternal()
+        val server = selectedServer ?: return showError("Выберите сервер")
+        val protocol = selectedProtocol ?: return showError("Выберите протокол")
+        if (protocol.name != "WireGuard" || protocol.config.isNullOrBlank()) return showError("Для выбранного сервера нет доступной конфигурации WireGuard")
+        val intent = VpnService.prepare(this)
+        if (intent != null) vpnPermissionLauncher.launch(intent) else connectInternal()
     }
 
     private fun connectInternal() {
-        val selection = currentSelection ?: return showError("No healthy protocols")
+        val server = selectedServer ?: return
+        val protocol = selectedProtocol ?: return
         lifecycleScope.launch {
-            val adapter: VpnProtocolAdapter = if (selection.protocol == com.zooot.vpn.selector.Proto.WIREGUARD) wireGuardAdapter else fakeAdapter
-            Log.d(TAG, "connect: selected protocol=${selection.protocol.name.lowercase()}, config available=${!selection.config.isNullOrBlank()}")
-            val result: ConnectResult = adapter.connect(VpnConfig(selection.serverId, selection.configUrl, selection.config))
-            Log.d(TAG, "connect: tunnel state result ok=${result.ok}")
+            val result = wireGuardAdapter.connect(VpnConfig(server.id, "", protocol.config))
             if (result.ok) {
-                updateStatus("Connected")
-                clearError()
-            } else {
-                updateStatus("Error")
-                showError(result.message.ifBlank { "Connection failed" })
-            }
+                session = ConnectionSession(server, protocol.name, SystemClock.elapsedRealtime())
+                startTimer()
+                showState(AppUiState.ConnectedState)
+            } else showError(result.message)
         }
     }
 
     private fun disconnect() {
         lifecycleScope.launch {
-            val sel = currentSelection
-            val adapter: VpnProtocolAdapter = if (sel?.protocol == com.zooot.vpn.selector.Proto.WIREGUARD) wireGuardAdapter else fakeAdapter
+            val adapter: VpnProtocolAdapter = if (selectedProtocol?.name == "WireGuard") wireGuardAdapter else fakeAdapter
             val result = adapter.disconnect()
             if (result.ok) {
-                updateStatus("Disconnected")
-                clearError()
-            } else {
-                updateStatus("Error")
-                showError(result.message.ifBlank { "Disconnect failed" })
+                stopTimer()
+                showState(AppUiState.ConnectionSetupState)
+            } else showError(result.message)
+        }
+    }
+
+    private fun startTimer() {
+        timerJob?.cancel()
+        timerJob = lifecycleScope.launch {
+            while (true) {
+                val s = session ?: break
+                connectedDuration.text = TimerFormatter.formatElapsed(SystemClock.elapsedRealtime() - s.startedAtMs)
+                val stats = trafficProvider.read()
+                connectedTrafficRx.text = stats.rx
+                connectedTrafficTx.text = stats.tx
+                delay(1000)
             }
         }
     }
+    private fun stopTimer() { timerJob?.cancel() }
 
-    private fun mapConfig(result: ResolveTokenResult): UiState {
-        val country = result.preferredCountry.ifBlank { result.servers.firstOrNull()?.country.orEmpty() }
-        val selection = ProtocolSelector.select(result.servers, country, NetworkType.WIFI, emptyMap())
-            ?: throw IllegalStateException("No healthy protocols")
-        Log.d(TAG, "mapConfig: selected protocol=${selection.protocol.name.lowercase()}, wireguard_config_available=${!selection.config.isNullOrBlank()}")
-        val server = result.servers.firstOrNull { it.serverId == selection.serverId }
-            ?: throw IllegalStateException("No servers available")
-        currentSelection = selection
-        return UiState(
-            result.userEmail.ifBlank { "demo@zooot.local" },
-            result.tariffTitle.ifBlank { "Demo Monthly" },
-            server.country,
-            server.city.ifBlank { "Frankfurt" },
-            server.serverIp,
-            selection.protocol.name.lowercase(),
-            if (selection.config.isNullOrBlank()) "missing" else "available (len=${selection.config.length})",
-            !selection.config.isNullOrBlank()
-        )
+    private fun showState(state: AppUiState) {
+        currentState = state
+        startContainer.visibility = if (state is AppUiState.StartState) View.VISIBLE else View.GONE
+        serverSelectionContainer.visibility = if (state is AppUiState.ServerSelectionState) View.VISIBLE else View.GONE
+        connectionContainer.visibility = if (state is AppUiState.ConnectionSetupState) View.VISIBLE else View.GONE
+        connectedContainer.visibility = if (state is AppUiState.ConnectedState) View.VISIBLE else View.GONE
     }
 
-    private fun render(state: UiState) {
-        emailValue.text = readable(state.email)
-        tariffValue.text = readable(state.tariff)
-        countryValue.text = readable(state.country)
-        cityValue.text = readable(state.city)
-        serverIpValue.text = readable(state.serverIp)
-        protocolValue.text = readable(state.protocol)
-        configStatusValue.text = readable(state.configStatus)
-    }
-
-    private fun readable(value: String): String = value.ifBlank { getString(R.string.empty_value) }
-
-    private fun updateStatus(status: String) {
-        statusBadge.text = status
-        when (status) {
-            "Connected" -> statusBadge.setTextColor(getColor(R.color.success))
-            "Disconnected" -> statusBadge.setTextColor(getColor(R.color.neutral))
-            "Error" -> statusBadge.setTextColor(getColor(R.color.error))
-            else -> statusBadge.setTextColor(getColor(R.color.primary))
-        }
-        statusBadge.setBackgroundResource(R.drawable.field_background)
-    }
-
-    private fun showError(message: String) {
-        errorCard.visibility = View.VISIBLE
-        errorValue.text = message
-    }
-
-    private fun clearError() {
-        errorValue.text = ""
-        errorCard.visibility = View.GONE
-    }
-
-    private fun mapErrorMessage(raw: String): String {
-        val text = raw.lowercase()
-        return when {
-            "http 400" in text || "invalid" in text -> "Invalid token"
-            "inactive" in text -> "Subscription inactive"
-            "no servers" in text -> "No servers available"
-            "no healthy" in text -> "No healthy protocols"
-            "timeout" in text || "failed to connect" in text || "unreachable" in text -> "Network error"
-            else -> "Unexpected response"
+    override fun onBackPressed() {
+        when (currentState) {
+            is AppUiState.ConnectionSetupState -> showState(AppUiState.ServerSelectionState)
+            is AppUiState.ServerSelectionState -> showState(AppUiState.StartState)
+            else -> super.onBackPressed()
         }
     }
 
-    private fun readBackendUrl(): String {
-        val prefs = getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("backend_url", ZootApiClient.backendBaseUrl) ?: ZootApiClient.backendBaseUrl
-    }
+    private fun showError(m: String) { errorCard.visibility = View.VISIBLE; errorText.text = m }
+    private fun clearError() { errorCard.visibility = View.GONE; errorText.text = "" }
 
-    private fun saveBackendUrl(url: String) {
-        getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE).edit().putString("backend_url", url).apply()
-    }
+    private fun readBackendUrl(): String = getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE).getString("backend_url", ZootApiClient.backendBaseUrl) ?: ZootApiClient.backendBaseUrl
 }
 
-data class UiState(
-    val email: String,
-    val tariff: String,
-    val country: String,
-    val city: String,
-    val serverIp: String,
-    val protocol: String,
-    val configStatus: String,
-    val configAvailable: Boolean = false
-)
+sealed class AppUiState { object StartState: AppUiState(); object ServerSelectionState: AppUiState(); object ConnectionSetupState: AppUiState(); object ConnectedState: AppUiState() }
+data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?)
+data class UiProtocolOption(val name: String, val enabled: Boolean, val config: String?) { companion object { fun wireguard(config: String?) = UiProtocolOption("WireGuard", !config.isNullOrBlank(), config); fun disabled(name: String)=UiProtocolOption(name,false,null)} }
+data class ConnectionSession(val server: UiServer, val protocol: String, val startedAtMs: Long)
+
+data class LinkValidationResult(val valid: Boolean, val token: String? = null, val error: String? = null)
+object LinkInputParser {
+    fun validate(raw: String): LinkValidationResult {
+        if (raw.isBlank()) return LinkValidationResult(false, error = "Введите ссылку подключения")
+        if (!raw.startsWith("zoootconf://")) return LinkValidationResult(false, error = "Неверный формат ссылки")
+        val token = parseToken(raw) ?: return LinkValidationResult(false, error = "Неверный формат ссылки")
+        return LinkValidationResult(true, token)
+    }
+    fun parseToken(raw: String): String? = DeepLinkParser.extractToken(raw)
+}
+object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && !it.wireGuardConfig.isNullOrBlank() }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
+object TimerFormatter { fun formatElapsed(ms: Long): String { val total = ms/1000; val h=total/3600; val m=(total%3600)/60; val s=total%60; return "%02d:%02d:%02d".format(h,m,s) } }
+object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate)= UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}?.config) }
+
+data class TrafficStats(val rx: String, val tx: String)
+interface VpnTrafficStatsProvider { fun read(): TrafficStats }
+object NoopTrafficStatsProvider: VpnTrafficStatsProvider { override fun read(): TrafficStats = TrafficStats("—", "—") }
