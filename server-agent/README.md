@@ -48,3 +48,8 @@ curl http://127.0.0.1:9090/health
 
 - Не коммитьте `/etc/zooot/wireguard/*` и любые сгенерированные `*.private`/`*.key` в git.
 - Приватные клиентские конфиги: `chmod 600`.
+
+### Provisioning behavior
+
+- `POST /wireguard/provision` returns `ok: true` only when `generate-client.sh` exits with code `0`.
+- `generate-client.sh --json` should output JSON metadata (for example: `client_name`, `assigned_ip`, `public_key`, `config_path`) and must not include `PrivateKey` or full client config in JSON output.
