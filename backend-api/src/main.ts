@@ -140,10 +140,6 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
           : { config: null, config_source: null };
       }
     }
-    if (r.type === 'wireguard') {
-      const selectedSource = wireguardResponse.config_source ?? 'none';
-      console.info(`wireguard config selected source=${selectedSource} hasDeviceId=${hasDeviceId}`);
-    }
     serversMap.get(r.id).protocols.push({
       type: r.type,
       priority: r.priority,
@@ -177,10 +173,6 @@ app.get('/api/v1/servers/recommended', async (_req, res) => {
   for (const r of rows.rows) {
     if (!serversMap.has(r.id)) {
       serversMap.set(r.id, { id: r.id, country: r.country_code, city: r.city, ip: r.ip, load_percent: r.load_percent, protocols: [] });
-    }
-    if (r.type === 'wireguard') {
-      const selectedSource = wireguardResponse.config_source ?? 'none';
-      console.info(`wireguard config selected source=${selectedSource} hasDeviceId=${hasDeviceId}`);
     }
     serversMap.get(r.id).protocols.push({ type: r.type, priority: r.priority, port: r.port, health_status: r.health_status });
   }
