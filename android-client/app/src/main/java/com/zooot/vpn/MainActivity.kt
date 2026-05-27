@@ -159,6 +159,7 @@ class MainActivity : AppCompatActivity() {
         val country = result.preferredCountry.ifBlank { result.servers.firstOrNull()?.country.orEmpty() }
         val selection = ProtocolSelector.select(result.servers, country, NetworkType.WIFI, emptyMap())
             ?: throw IllegalStateException("No healthy protocols")
+        Log.d(TAG, "mapConfig: selected protocol=${selection.protocol.name.lowercase()}, wireguard_config_available=${!selection.config.isNullOrBlank()}")
         val server = result.servers.firstOrNull { it.serverId == selection.serverId }
             ?: throw IllegalStateException("No servers available")
         currentSelection = selection
@@ -169,7 +170,8 @@ class MainActivity : AppCompatActivity() {
             server.city.ifBlank { "Frankfurt" },
             server.serverIp,
             selection.protocol.name.lowercase(),
-            if (selection.config.isNullOrBlank()) "missing" else "available (len=${selection.config.length})"
+            if (selection.config.isNullOrBlank()) "missing" else "available (len=${selection.config.length})",
+            !selection.config.isNullOrBlank()
         )
     }
 
@@ -235,5 +237,6 @@ data class UiState(
     val city: String,
     val serverIp: String,
     val protocol: String,
-    val configStatus: String
+    val configStatus: String,
+    val configAvailable: Boolean = false
 )
