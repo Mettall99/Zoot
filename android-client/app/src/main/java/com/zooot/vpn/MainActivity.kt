@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.VpnService
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -15,6 +16,7 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.zooot.vpn.api.DeviceIdentity
+import com.zooot.vpn.api.ApiHttpException
 import com.zooot.vpn.api.ResolveTokenResult
 import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.deeplink.DeepLinkParser
@@ -26,8 +28,13 @@ import com.zooot.vpn.vpn.protocol.WireGuardProtocolAdapter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        private const val TAG = "ManualLinkFlow"
+        private const val DEFAULT_DEBUG_BACKEND_URL = "http://31.59.45.197:8080"
+    }
     private lateinit var wireGuardAdapter: WireGuardProtocolAdapter
     private val fakeAdapter = FakeVpnProtocolAdapter(ProtocolType.AMNEZIAWG)
     private var selectedServer: UiServer? = null
@@ -65,10 +72,9 @@ class MainActivity : AppCompatActivity() {
         setupActions()
 
         val deepLink = intent?.dataString.orEmpty()
-        val token = LinkInputParser.parseToken(deepLink)
-        if (token != null) {
+        if (deepLink.isNotBlank()) {
             linkInput.setText(deepLink)
-            resolveTokenAndOpenServers(token)
+            submitLink(deepLink, source = "deep-link")
         } else {
             showState(AppUiState.StartState)
         }
@@ -92,13 +98,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupActions() {
         findViewById<MaterialButton>(R.id.continueButton).setOnClickListener {
-            val parsed = LinkInputParser.validate(linkInput.text?.toString().orEmpty())
-            if (!parsed.valid) {
-                linkInputLayout.error = parsed.error
-                return@setOnClickListener
-            }
-            linkInputLayout.error = null
-            resolveTokenAndOpenServers(parsed.token!!)
+            Log.d(TAG, "manual link submit clicked")
+            submitLink(linkInput.text?.toString().orEmpty(), source = "manual")
         }
         findViewById<MaterialButton>(R.id.selectServerButton).setOnClickListener { showConnectionScreen() }
         findViewById<MaterialButton>(R.id.backToServersButton).setOnClickListener { showState(AppUiState.ServerSelectionState) }
@@ -106,20 +107,54 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.disconnectButton).setOnClickListener { disconnect() }
     }
 
-    private fun resolveTokenAndOpenServers(token: String) {
+    private fun submitLink(rawLink: String, source: String) {
+        val parsed = LinkInputParser.validate(rawLink)
+        if (!parsed.valid) {
+            linkInputLayout.error = parsed.error
+            if (source == "manual") showError(parsed.error ?: "Неверный формат ссылки")
+            return
+        }
+        Log.d(TAG, "manual link validation ok")
+        linkInputLayout.error = null
+        val token = parsed.token!!
+        Log.d(TAG, "manual token extracted")
+        loadConfigFromToken(token)
+    }
+
+    private fun loadConfigFromToken(token: String) {
         clearError(); showState(AppUiState.ServerSelectionState)
         lifecycleScope.launch {
+            val deviceId = DeviceIdentity.getOrCreate(this@MainActivity)
+            val backendUrl = readBackendUrl()
+            Log.d(TAG, "resolve-token start backendUrl=$backendUrl hasDeviceId=${deviceId.isNotBlank()}")
             try {
-                val result = ZootApiClient.resolveToken(token, DeviceIdentity.getOrCreate(this@MainActivity), "Android device", readBackendUrl())
+                val result = ZootApiClient.resolveToken(token, deviceId, "Android device", backendUrl)
                 resolveResult = result
                 val servers = result.servers.map { UiMapper.toUiServer(it) }
+                Log.d(TAG, "resolve-token success servers=${servers.size}")
+                if (servers.none { !it.wireGuardConfig.isNullOrBlank() && it.wireGuardConfig.trim().lowercase() != "null" }) {
+                    showState(AppUiState.StartState)
+                    showError("Нет доступной WireGuard-конфигурации")
+                    return@launch
+                }
                 selectedServer = ServerRecommendation.pick(servers)
                 renderServers(servers)
             } catch (e: Exception) {
+                Log.e(TAG, "resolve-token failed type=${e::class.java.simpleName} message=${safeErrorMessage(e)}")
                 showState(AppUiState.StartState)
-                showError("Не удалось подключиться к серверу")
+                showError(mapResolveError(e))
             }
         }
+    }
+    private fun safeErrorMessage(e: Throwable): String = when (e) {
+        is ApiHttpException -> "http_${e.code}"
+        else -> e.message?.take(120).orEmpty()
+    }
+
+    private fun mapResolveError(e: Exception): String = when (e) {
+        is ApiHttpException -> if (e.code == 401 || e.code == 404) "Ссылка недействительна" else "Не удалось подключиться к серверу"
+        is IOException -> "Не удалось подключиться к серверу"
+        else -> "Не удалось подключиться к серверу"
     }
 
     private fun renderServers(servers: List<UiServer>) {
@@ -224,7 +259,12 @@ class MainActivity : AppCompatActivity() {
     private fun showError(m: String) { errorCard.visibility = View.VISIBLE; errorText.text = m }
     private fun clearError() { errorCard.visibility = View.GONE; errorText.text = "" }
 
-    private fun readBackendUrl(): String = getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE).getString("backend_url", ZootApiClient.backendBaseUrl) ?: ZootApiClient.backendBaseUrl
+    private fun readBackendUrl(): String {
+        val prefs = getSharedPreferences("zooot_prefs", Context.MODE_PRIVATE)
+        val saved = prefs.getString("backend_url", null)?.trim().orEmpty()
+        if (saved.isNotBlank()) return saved
+        return if (BuildConfig.DEBUG) DEFAULT_DEBUG_BACKEND_URL else ZootApiClient.backendBaseUrl
+    }
 }
 
 sealed class AppUiState { object StartState: AppUiState(); object ServerSelectionState: AppUiState(); object ConnectionSetupState: AppUiState(); object ConnectedState: AppUiState() }
@@ -241,6 +281,10 @@ object LinkInputParser {
         return LinkValidationResult(true, token)
     }
     fun parseToken(raw: String): String? = DeepLinkParser.extractToken(raw)
+}
+object LinkFlowContract {
+    const val DEVICE_NAME = "Android device"
+    const val DEBUG_MVP_BACKEND_URL = "http://31.59.45.197:8080"
 }
 object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && !it.wireGuardConfig.isNullOrBlank() && it.wireGuardConfig.trim().lowercase() != "null" }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
 object TimerFormatter { fun formatElapsed(ms: Long): String { val total = ms/1000; val h=total/3600; val m=(total%3600)/60; val s=total%60; return "%02d:%02d:%02d".format(h,m,s) } }

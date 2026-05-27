@@ -1,5 +1,6 @@
 package com.zooot.vpn
 
+import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.selector.HealthStatus
 import com.zooot.vpn.selector.Proto
 import com.zooot.vpn.selector.ServerCandidate
@@ -7,10 +8,27 @@ import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
 import org.junit.Assert.*
 import org.junit.Test
+import org.json.JSONObject
 
 class NewFlowUnitTest {
     @Test fun manualLinkParsing() { assertEquals("demo-token", LinkInputParser.parseToken("zoootconf://demo-token")) }
+    @Test fun manualAndDeepLinkUseSameParserPath() {
+        val raw = "zoootconf://demo-token"
+        assertEquals(LinkInputParser.parseToken(raw), LinkInputParser.validate(raw).token)
+    }
+    @Test fun resolveBodyContainsDeviceIdentityFields() {
+        val body = ZootApiClient.buildResolveTokenBody("demo-token", "device-1", LinkFlowContract.DEVICE_NAME)
+        val json = JSONObject(body)
+        assertEquals("device-1", json.getString("device_id"))
+        assertEquals(LinkFlowContract.DEVICE_NAME, json.getString("device_name"))
+    }
+    @Test fun defaultDebugBackendUrlIsMvpBackend() { assertEquals("http://31.59.45.197:8080", LinkFlowContract.DEBUG_MVP_BACKEND_URL) }
     @Test fun invalidLinkValidation() { val r = LinkInputParser.validate("http://bad"); assertFalse(r.valid); assertEquals("Неверный формат ссылки", r.error) }
+    @Test fun invalidLinkDoesNotProduceTokenForNetworkCall() {
+        val r = LinkInputParser.validate("invalid")
+        assertFalse(r.valid)
+        assertNull(r.token)
+    }
     @Test fun deepLinkStartsResolveTokenFlowParserReady() { assertNotNull(LinkInputParser.parseToken("zoootconf://demo-token")) }
     @Test fun recommendedServerChoice() {
         val servers = listOf(
