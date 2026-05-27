@@ -19,7 +19,12 @@ object ZootApiClient {
     private fun isValidConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
 
     private const val TAG = "ZootApiClient"
-    val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
+    
+
+    private fun safeLogDebug(message: String) {
+        runCatching { safeLogDebug(message) }
+    }
+val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
 
     fun resolveToken(token: String, deviceId: String, deviceName: String, backendUrl: String = backendBaseUrl): ResolveTokenResult {
         val body = buildResolveTokenBody(token, deviceId, deviceName)
@@ -57,7 +62,7 @@ object ZootApiClient {
         val tariffTitle = root.optObject("tariff")?.optString("title", "").orEmpty()
         val serversJson = root.optArray("servers") ?: JsonArray()
         val servers = mutableListOf<ServerCandidate>()
-        Log.d(TAG, "resolve-token parse: servers_count=${serversJson.size()}")
+        safeLogDebug("resolve-token parse: servers_count=${serversJson.size()}")
         for (i in 0 until serversJson.size()) {
             val server = serversJson[i].takeIf { it.isJsonObject }?.asJsonObject ?: continue
             val serverCountry = server.optString("country", preferredCountry)
@@ -86,11 +91,11 @@ object ZootApiClient {
                         val healthRaw = obj.optString("health_status", obj.optString("health", "healthy"))
                         val health = if (healthRaw.lowercase() == "failed") HealthStatus.FAILED else HealthStatus.HEALTHY
                         val configUrl = obj.optString("config_url", "")
-                        val port = if (obj.hasNonNull("port")) obj.optInt("port") else null
+                        val port = if (obj.hasNonNull("port")) obj.optInt("port", 0) else null
                         val configSource = obj.optString("config_source", "").ifBlank { null }
                         val configAvailable = isValidConfig(config)
                         val configLen = if (configAvailable) config.length else 0
-                        Log.d(TAG, "resolve-token parse: wireguard server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
+                        safeLogDebug("resolve-token parse: wireguard server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
                         protocols += ServerProtocol(proto, health, configUrl, config, port, configSource)
                         protocolTypes += proto.name.lowercase()
                     }
@@ -98,7 +103,7 @@ object ZootApiClient {
             }
             if (protocols.isEmpty()) protocols += ServerProtocol(Proto.AMNEZIAWG, HealthStatus.HEALTHY, "")
             val wgHasConfig = protocols.any { it.type == Proto.WIREGUARD && isValidConfig(it.config) }
-            Log.d(TAG, "resolve-token parse: server_id=$serverId protocols_count=${protocolItems.size()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig")
+            safeLogDebug("resolve-token parse: server_id=$serverId protocols_count=${protocolItems.size()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig")
 
             servers += ServerCandidate(serverId, serverCountry, ServerStatus.ONLINE, loadPercent, latencyMs, protocols, city, ip)
         }
