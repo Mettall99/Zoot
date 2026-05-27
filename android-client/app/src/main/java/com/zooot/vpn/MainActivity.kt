@@ -103,7 +103,8 @@ class MainActivity : AppCompatActivity() {
         clearError()
         Thread {
             try {
-                val result = ZootApiClient.resolveToken(currentToken, currentBackendUrl)
+                val deviceId = com.zooot.vpn.api.DeviceIdentity.getOrCreate(this)
+                val result = ZootApiClient.resolveToken(currentToken, deviceId, "Android device", currentBackendUrl)
                 val state = mapConfig(result)
                 runOnUiThread {
                     render(state)

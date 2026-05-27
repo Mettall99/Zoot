@@ -57,3 +57,6 @@ Backward-compatibility note:
 3. On VPS run `wg show` and verify peer has `latest handshake` and `transfer` counters updating.
 4. If `latest handshake` and `transfer` are present, real VPN connect is successful.
 5. In app UI status badge must show `Connected` (not `Error`) and error card must be hidden.
+
+## Device-level provisioning check
+Use resolve-token payload with `device_id` and `device_name` to validate per-device config source.

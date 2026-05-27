@@ -9,3 +9,9 @@
 - Payment webhook signature verification.
 - Admin audit log for mutations.
 - Secrets through env/secret manager.
+
+## Security notes
+- Demo key must be rotated before production.
+- Never log private keys or full config.
+- WireGuard configs should stay `chmod 600`.
+- Prefer read-only backend mount for clients when backend only reads configs.

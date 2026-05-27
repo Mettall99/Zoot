@@ -7,13 +7,14 @@ import { z } from 'zod';
 import fs from 'node:fs/promises';
 import { getDb } from './db.js';
 import { apiError, zodToValidation } from './errors.js';
+import { DEFAULT_DEVICE_ID, getOrCreateWireGuardDeviceConfig, isProvisioningEnabled, normalizeDeviceInput } from './wireguard/provisioning.js';
 
 export const app = express();
 app.use(cors());
 app.use(express.json());
 
 const authSchema = z.object({ email: z.string().email(), password: z.string().min(8) });
-const resolveTokenSchema = z.object({ token: z.string().min(1) });
+const resolveTokenSchema = z.object({ token: z.string().min(1), device_id: z.string().optional(), device_name: z.string().optional() });
 const MAX_WIREGUARD_CONFIG_BYTES = 64 * 1024;
 
 const readWireGuardClientConfig = async (): Promise<string | null> => {
@@ -71,6 +72,16 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
   const parsed = resolveTokenSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(zodToValidation(parsed.error));
 
+  let deviceId = DEFAULT_DEVICE_ID;
+  let deviceName: string | null = null;
+  try {
+    const normalized = normalizeDeviceInput(parsed.data.device_id, parsed.data.device_name);
+    deviceId = normalized.deviceId;
+    deviceName = normalized.deviceName;
+  } catch {
+    return res.status(400).json(apiError('INVALID_DEVICE_ID', 'Invalid device_id format'));
+  }
+
   const db = getDb();
   const tokenRes = await db.query(
     `SELECT ct.user_id, u.email, u.id, s.tariff_id, s.status AS subscription_status, s.expires_at, t.code AS tariff_code, t.title AS tariff_title,
@@ -87,7 +98,6 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
   if (!tokenRes.rowCount) return res.status(404).json(apiError('CONFIG_TOKEN_NOT_FOUND', 'Config token not found'));
   const row = tokenRes.rows[0];
   if (!row.tariff_id) return res.status(403).json(apiError('SUBSCRIPTION_INACTIVE', 'Subscription is inactive'));
-
   const serversRes = await db.query(
     `SELECT s.id, s.country_code, s.city, s.ip::text, s.load_percent,
             sp.type, sp.priority, sp.port, sp.status AS health_status
@@ -96,19 +106,34 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
      WHERE s.status = 'online' AND sp.status = 'healthy'
      ORDER BY s.load_percent ASC, sp.priority ASC`
   );
-  const wireguardConfig = await readWireGuardClientConfig();
+  const demoWireguardConfig = await readWireGuardClientConfig();
 
   const serversMap = new Map<string, any>();
   for (const r of serversRes.rows) {
     if (!serversMap.has(r.id)) {
       serversMap.set(r.id, { id: r.id, country: r.country_code, city: r.city, ip: r.ip, load_percent: r.load_percent, protocols: [] });
     }
+    let wireguardResponse = { config: null as string | null, config_source: null as string | null };
+    if (r.type === 'wireguard') {
+      if (isProvisioningEnabled()) {
+        try {
+          const result = await getOrCreateWireGuardDeviceConfig(db, row.user_id, r.id, deviceId, deviceName);
+          wireguardResponse = { config: result.config, config_source: result.configSource };
+        } catch {
+          wireguardResponse = { config: demoWireguardConfig, config_source: 'demo_fallback' };
+        }
+      } else {
+        // TODO(android): all clients should send stable generated device_id.
+        wireguardResponse = { config: demoWireguardConfig, config_source: 'demo_fallback' };
+      }
+    }
     serversMap.get(r.id).protocols.push({
       type: r.type,
       priority: r.priority,
       port: r.port,
       health_status: r.health_status,
-      config: r.type === 'wireguard' ? wireguardConfig : null
+      config: wireguardResponse.config,
+      config_source: r.type === 'wireguard' ? wireguardResponse.config_source : null
     });
   }
 

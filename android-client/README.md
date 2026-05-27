@@ -62,3 +62,6 @@ adb shell am start -a android.intent.action.VIEW -d "zoootconf://demo-token"
 - Backend `/api/v1/config/resolve-token` must return `wireguard` protocol with non-empty `config`.
 - On Android, tapping **Connect** for selected `wireguard` requests VPN permission via `VpnService.prepare(...)` and then starts tunnel.
 - Verify VPS tunnel status with `wg show` (expect latest handshake + transfer bytes after connect).
+
+## Device ID MVP
+Android now sends generated UUID `device_id` + `device_name` in resolve-token request. UUID is stored in SharedPreferences and may change after reinstall.

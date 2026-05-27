@@ -42,3 +42,9 @@ Behavior:
 - missing/inaccessible file -> `config: null` (backend keeps working);
 - max file size is limited to 64 KB;
 - backend never logs config contents.
+
+## Per-device provisioning MVP
+- Enable: `WIREGUARD_PROVISIONING_ENABLED=true`
+- Volumes: clients dir and scripts dir must be mounted to backend runtime.
+- Verify: call resolve-token with `device_id`, check `wg show`, and query `SELECT * FROM wireguard_devices;`.
+- Revoke: `server-agent/wireguard/revoke-client.sh <client-name>`.
