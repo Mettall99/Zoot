@@ -62,3 +62,5 @@ else
   echo "public_key=${CLIENT_PUBLIC_KEY}"
 fi
 [[ "$PRINT_CONFIG" == "true" ]] && cat "${CLIENT_CONF_PATH}"
+
+exit 0

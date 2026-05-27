@@ -21,7 +21,26 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') return json(res, 200, { ok: true, service: 'zooot-server-agent' });
   if (req.headers['x-zooot-agent-token'] !== token) return json(res, 401, { ok: false, error: 'UNAUTHORIZED' });
   if (req.method === 'POST' && req.url === '/wireguard/provision') {
-    try { const body = await parseBody(req); if (!validateClientName(body.client_name)) return json(res, 400, { ok: false, error: 'INVALID_CLIENT_NAME' }); const { stdout } = await execFileAsync(generateScript, [body.client_name, '--json'], { timeout: 10_000 }); const meta = JSON.parse(stdout); const config = await readConfig(meta.config_path); return json(res, 200, { ok: true, client_name: meta.client_name, assigned_ip: meta.assigned_ip, public_key: meta.public_key, config, config_path: meta.config_path }); } catch { return json(res, 500, { ok: false, error: 'PROVISION_FAILED' }); }
+    try {
+      const body = await parseBody(req);
+      if (!validateClientName(body.client_name)) return json(res, 400, { ok: false, error: 'INVALID_CLIENT_NAME' });
+      const { stdout } = await execFileAsync(generateScript, [body.client_name, '--json'], { timeout: 10_000 });
+      const jsonLine = stdout.trim().split('\n').reverse().find((line) => line.trim().startsWith('{'));
+      if (!jsonLine) throw new Error('generate-client did not return JSON');
+      const meta = JSON.parse(jsonLine);
+      const config = await readConfig(meta.config_path);
+      return json(res, 200, { ok: true, client_name: meta.client_name, assigned_ip: meta.assigned_ip, public_key: meta.public_key, config, config_path: meta.config_path });
+    } catch (error) {
+      const maskSecrets = (value) => String(value || '').replace(/PrivateKey\s*=\s*[^\n]*/gi, 'PrivateKey = [MASKED]').slice(0, 1000);
+      console.error('provision_failed', {
+        message: error?.message,
+        code: error?.code,
+        signal: error?.signal,
+        stderr: String(error?.stderr || '').slice(0, 1000),
+        stdout: maskSecrets(error?.stdout),
+      });
+      return json(res, 500, { ok: false, error: 'PROVISION_FAILED' });
+    }
   }
   if (req.method === 'POST' && req.url === '/wireguard/revoke') {
     try { const body = await parseBody(req); if (!validateClientName(body.client_name)) return json(res, 400, { ok: false, error: 'INVALID_CLIENT_NAME' }); await execFileAsync(revokeScript, [body.client_name], { timeout: 10_000 }); return json(res, 200, { ok: true, client_name: body.client_name, status: 'revoked' }); } catch { return json(res, 500, { ok: false, error: 'REVOKE_FAILED' }); }
