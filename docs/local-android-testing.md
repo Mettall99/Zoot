@@ -41,6 +41,9 @@ After opening `zoootconf://demo-token` and successful config load:
 - selected protocol: `amneziawg`
 - status: `ReadyToConnect` (or `Connected` after pressing Connect)
 
+Backward-compatibility note:
+- Старый Android UI продолжает работать, даже если backend возвращает дополнительное поле `protocols[].config`.
+
 
 ## Modern MVP test UI
 - Header with **status badge** (Ready / ReadyToConnect / Connected / Disconnected / Error).

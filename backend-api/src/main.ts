@@ -4,6 +4,7 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import argon2 from 'argon2';
 import { z } from 'zod';
+import fs from 'node:fs/promises';
 import { getDb } from './db.js';
 import { apiError, zodToValidation } from './errors.js';
 
@@ -13,6 +14,21 @@ app.use(express.json());
 
 const authSchema = z.object({ email: z.string().email(), password: z.string().min(8) });
 const resolveTokenSchema = z.object({ token: z.string().min(1) });
+const MAX_WIREGUARD_CONFIG_BYTES = 64 * 1024;
+
+const readWireGuardClientConfig = async (): Promise<string | null> => {
+  const path = process.env.WIREGUARD_CLIENT_CONFIG_PATH?.trim();
+  if (!path) return null;
+
+  try {
+    const stat = await fs.stat(path);
+    if (!stat.isFile() || stat.size > MAX_WIREGUARD_CONFIG_BYTES) return null;
+    return await fs.readFile(path, 'utf8');
+  } catch (error: any) {
+    if (error?.code === 'ENOENT' || error?.code === 'EACCES' || error?.code === 'EPERM') return null;
+    return null;
+  }
+};
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'zooot-backend-api' }));
 
@@ -80,13 +96,20 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
      WHERE s.status = 'online' AND sp.status = 'healthy'
      ORDER BY s.load_percent ASC, sp.priority ASC`
   );
+  const wireguardConfig = await readWireGuardClientConfig();
 
   const serversMap = new Map<string, any>();
   for (const r of serversRes.rows) {
     if (!serversMap.has(r.id)) {
       serversMap.set(r.id, { id: r.id, country: r.country_code, city: r.city, ip: r.ip, load_percent: r.load_percent, protocols: [] });
     }
-    serversMap.get(r.id).protocols.push({ type: r.type, priority: r.priority, port: r.port, health_status: r.health_status });
+    serversMap.get(r.id).protocols.push({
+      type: r.type,
+      priority: r.priority,
+      port: r.port,
+      health_status: r.health_status,
+      config: r.type === 'wireguard' ? wireguardConfig : null
+    });
   }
 
   return res.json({

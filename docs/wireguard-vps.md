@@ -52,3 +52,41 @@ ufw status
 - Никогда не коммитьте приватные ключи в git.
 - Ключи и клиентские конфиги должны генерироваться только на VPS.
 - Любые generated артефакты должны храниться вне репозитория.
+
+## 6) Backend integration (MVP)
+
+Чтобы backend возвращал demo WireGuard config в `POST /api/v1/config/resolve-token`, добавьте override в compose:
+
+```yaml
+services:
+  backend-api:
+    environment:
+      WIREGUARD_CLIENT_CONFIG_PATH: /app/runtime/wireguard/clients/demo.conf
+    volumes:
+      - /etc/zooot/wireguard/clients:/app/runtime/wireguard/clients:ro
+```
+
+После изменения на VPS:
+
+```bash
+cd /opt/zooot/infra
+docker compose up -d --build backend-api
+```
+
+Проверка:
+
+```bash
+curl -X POST http://31.59.45.197:8080/api/v1/config/resolve-token \
+  -H "Content-Type: application/json" \
+  -d '{"token":"demo-token"}'
+```
+
+Ожидание: у protocol с `type=wireguard` есть поле `config`.
+
+## 7) SECURITY TODO (post-MVP)
+
+- Demo config допустим только для MVP.
+- В production нужен уникальный config per user/device/subscription.
+- Нужен revoke peer lifecycle.
+- Нужна key rotation.
+- Нельзя переиспользовать один WireGuard private key для всех пользователей.
