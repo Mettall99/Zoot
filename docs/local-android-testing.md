@@ -54,5 +54,6 @@ Backward-compatibility note:
 ## WireGuard real adapter check
 1. Load token config and confirm `WireGuard config: available`.
 2. Tap **Connect** and accept VPN permission prompt.
-3. Expect app status `Connected`.
-4. On VPS run `wg show` and verify peer handshake/transfer counters update.
+3. On VPS run `wg show` and verify peer has `latest handshake` and `transfer` counters updating.
+4. If `latest handshake` and `transfer` are present, real VPN connect is successful.
+5. In app UI status badge must show `Connected` (not `Error`) and error card must be hidden.

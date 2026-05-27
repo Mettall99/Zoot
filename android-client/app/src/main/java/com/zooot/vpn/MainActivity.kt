@@ -3,6 +3,7 @@
 import android.content.Context
 import android.net.VpnService
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
@@ -26,6 +27,9 @@ import com.zooot.vpn.vpn.protocol.WireGuardProtocolAdapter
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        private const val TAG = "MainActivity"
+    }
     private lateinit var backendUrlInput: EditText
     private lateinit var tokenValue: TextView
     private lateinit var emailValue: TextView
@@ -129,8 +133,16 @@ class MainActivity : AppCompatActivity() {
         val selection = currentSelection ?: return showError("No healthy protocols")
         lifecycleScope.launch {
             val adapter: VpnProtocolAdapter = if (selection.protocol == com.zooot.vpn.selector.Proto.WIREGUARD) wireGuardAdapter else fakeAdapter
+            Log.d(TAG, "connect: selected protocol=${selection.protocol.name.lowercase()}, config available=${!selection.config.isNullOrBlank()}")
             val result: ConnectResult = adapter.connect(VpnConfig(selection.serverId, selection.configUrl, selection.config))
-            if (result.ok) { updateStatus("Connected"); clearError() } else { updateStatus("Error"); showError(result.message.ifBlank { "Connection failed" }) }
+            Log.d(TAG, "connect: tunnel state result ok=${result.ok}")
+            if (result.ok) {
+                updateStatus("Connected")
+                clearError()
+            } else {
+                updateStatus("Error")
+                showError(result.message.ifBlank { "Connection failed" })
+            }
         }
     }
 
@@ -225,4 +237,3 @@ data class UiState(
     val protocol: String,
     val configStatus: String
 )
-
