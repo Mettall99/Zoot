@@ -58,6 +58,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var protocolsList: LinearLayout
     private lateinit var errorCard: MaterialCardView
     private lateinit var errorText: TextView
+    private lateinit var connectedStatus: TextView
+    private lateinit var connectedServer: TextView
+    private lateinit var connectedProtocol: TextView
     private lateinit var connectedDuration: TextView
     private lateinit var connectedTrafficRx: TextView
     private lateinit var connectedTrafficTx: TextView
@@ -107,6 +110,9 @@ class MainActivity : AppCompatActivity() {
         protocolsList = findViewById(R.id.protocolsList)
         errorCard = findViewById(R.id.errorCard)
         errorText = findViewById(R.id.errorValue)
+        connectedStatus = findViewById(R.id.connectedStatus)
+        connectedServer = findViewById(R.id.connectedServer)
+        connectedProtocol = findViewById(R.id.connectedProtocol)
         connectedDuration = findViewById(R.id.connectedDuration)
         connectedTrafficRx = findViewById(R.id.connectedTrafficRx)
         connectedTrafficTx = findViewById(R.id.connectedTrafficTx)
@@ -248,41 +254,57 @@ class MainActivity : AppCompatActivity() {
             }
             Log.d(TAG, "wireguard connect result success=${result.ok} message=${result.message.take(120)}")
             if (result.ok) {
+                clearError()
                 session = ConnectionSession(server, protocol.name, SystemClock.elapsedRealtime())
+                renderConnectedSession(session!!)
                 startTimer()
                 showState(AppUiState.ConnectedState)
-            } else showError(result.message)
+                Log.d(TAG, "connected screen rendered")
+            } else {
+                session = null
+                showState(AppUiState.ConnectionSetupState)
+                showError(result.message)
+            }
             setConnecting(false)
         }
     }
 
     private fun disconnect() {
         lifecycleScope.launch {
-            setConnecting(true)
+            Log.d(TAG, "disconnect start")
+            setDisconnecting(true)
             val adapter: VpnProtocolAdapter = if (selectedProtocol?.name == "WireGuard") wireGuardAdapter else fakeAdapter
             val result = withContext(Dispatchers.IO) { adapter.disconnect() }
+            Log.d(TAG, "disconnect result success=${result.ok}")
             if (result.ok) {
                 stopTimer()
+                session = null
                 showState(AppUiState.ConnectionSetupState)
-            } else showError(result.message)
-            setConnecting(false)
+                clearError()
+                setDisconnectedUi()
+            } else {
+                if (session != null) showState(AppUiState.ConnectedState)
+                showError(result.message)
+            }
+            setDisconnecting(false)
         }
     }
 
     private fun startTimer() {
         timerJob?.cancel()
+        Log.d(TAG, "connection timer started")
         timerJob = lifecycleScope.launch {
             while (true) {
                 val s = session ?: break
                 connectedDuration.text = TimerFormatter.formatElapsed(SystemClock.elapsedRealtime() - s.startedAtMs)
                 val stats = trafficProvider.read()
-                connectedTrafficRx.text = stats.rx
-                connectedTrafficTx.text = stats.tx
+                connectedTrafficRx.text = "↓ ${stats.rx}"
+                connectedTrafficTx.text = "↑ ${stats.tx}"
                 delay(1000)
             }
         }
     }
-    private fun stopTimer() { timerJob?.cancel() }
+    private fun stopTimer() { timerJob?.cancel(); timerJob = null; Log.d(TAG, "connection timer stopped") }
 
     private fun showState(state: AppUiState) {
         currentState = state
@@ -311,8 +333,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun setConnecting(isConnecting: Boolean) {
         connectButton.isEnabled = !isConnecting
-        connectButton.text = if (isConnecting) "Подключение..." else "Connect"
-        disconnectButton.isEnabled = !isConnecting
+        connectButton.text = if (isConnecting) "Подключаемся..." else "Подключиться"
+    }
+
+    private fun setDisconnecting(isDisconnecting: Boolean) {
+        disconnectButton.isEnabled = !isDisconnecting
+        disconnectButton.text = if (isDisconnecting) "Отключаемся..." else "Отключиться"
+    }
+
+    private fun renderConnectedSession(active: ConnectionSession) {
+        connectedStatus.text = "Подключено"
+        connectedServer.text = "${active.server.country} · ${active.server.city} · ${active.server.serverIp}"
+        connectedProtocol.text = active.protocol
+        connectedDuration.text = "00:00:00"
+        connectedTrafficRx.text = "↓ —"
+        connectedTrafficTx.text = "↑ —"
+    }
+
+    private fun setDisconnectedUi() {
+        connectedStatus.text = "Отключено"
+        connectButton.text = "Подключиться"
     }
 
     private fun readBackendUrl(): String {
