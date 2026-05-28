@@ -72,9 +72,12 @@ class XrayRealityProtocolAdapter(
 
         internal fun safeExceptionMessage(e: Throwable): String =
             e.message?.replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}"), "<redacted>")
+                ?.replace(Regex("(?i)(uuid|public_?key|short_?id|sid|token|private_?key|vless://)[^\\s,;)]*"), "\$1=<redacted>")
                 ?.replace(Regex("[A-Za-z0-9_-]{20,}"), "<redacted>")
-                ?.take(120)
+                ?.take(160)
                 ?: ""
+
+        internal fun realityFailureMessage(reason: String): String = "Reality failed: ${reason.ifBlank { "unknown startup error" }}"
 
         private fun parseJsonConfig(raw: String): XrayRealityClientConfig {
             val obj = JsonParser.parseString(raw).asJsonObject
@@ -151,10 +154,11 @@ class XrayRealityProtocolAdapter(
             core.start(singBoxConfig)
             val running = core.isRunning()
             safeLogDebug("connect: protocol=xray_vless_reality config_available=true core_name=${core::class.java.simpleName} core_start_success=$running")
-            if (running) ConnectResult(true, "Connected") else ConnectResult(false, "Reality core failed to start")
+            if (running) ConnectResult(true, "Connected") else ConnectResult(false, realityFailureMessage("service did not report running"))
         } catch (e: Exception) {
-            safeLogWarn("connect: protocol=xray_vless_reality core_name=${core::class.java.simpleName} core_start_success=false exception=${e::class.java.simpleName} message=${safeExceptionMessage(e)}")
-            ConnectResult(false, "Reality core failed to start")
+            val reason = safeExceptionMessage(e)
+            safeLogWarn("connect: protocol=xray_vless_reality core_name=${core::class.java.simpleName} core_start_success=false exception=${e::class.java.simpleName} message=$reason")
+            ConnectResult(false, realityFailureMessage(reason))
         }
     }
 
@@ -167,6 +171,9 @@ class XrayRealityProtocolAdapter(
     }
 
     override suspend fun healthCheck(config: VpnConfig): HealthCheckResult = HealthCheckResult(ok = parseConfig(config.config) != null)
+
+    private fun safeLogDebug(message: String) { runCatching { Log.d(TAG, message) } }
+    private fun safeLogWarn(message: String) { runCatching { Log.w(TAG, message) } }
 
     private fun logConfigAvailability(config: XrayRealityClientConfig, configAvailable: Boolean) {
         safeLogDebug(
