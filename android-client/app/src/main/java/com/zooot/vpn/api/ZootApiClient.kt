@@ -22,9 +22,10 @@ object ZootApiClient {
     
 
     private fun safeLogDebug(message: String) {
-        runCatching { safeLogDebug(message) }
+        runCatching { Log.d(TAG, message) }
     }
-val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
+
+    val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
 
     fun resolveToken(token: String, deviceId: String, deviceName: String, backendUrl: String = backendBaseUrl): ResolveTokenResult {
         val body = buildResolveTokenBody(token, deviceId, deviceName)
@@ -95,7 +96,7 @@ val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
                         val configSource = obj.optString("config_source", "").ifBlank { null }
                         val configAvailable = isValidConfig(config)
                         val configLen = if (configAvailable) config.length else 0
-                        safeLogDebug("resolve-token parse: wireguard server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
+                        safeLogDebug("resolve-token parse: protocol=${proto.name.lowercase()} server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
                         protocols += ServerProtocol(proto, health, configUrl, config, port, configSource)
                         protocolTypes += proto.name.lowercase()
                     }
@@ -103,7 +104,8 @@ val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
             }
             if (protocols.isEmpty()) protocols += ServerProtocol(Proto.AMNEZIAWG, HealthStatus.HEALTHY, "")
             val wgHasConfig = protocols.any { it.type == Proto.WIREGUARD && isValidConfig(it.config) }
-            safeLogDebug("resolve-token parse: server_id=$serverId protocols_count=${protocolItems.size()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig")
+            val xrayHasConfig = protocols.any { it.type == Proto.XRAY_VLESS_REALITY && isValidConfig(it.config) }
+            safeLogDebug("resolve-token parse: server_id=$serverId protocols_count=${protocolItems.size()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig xray_config_available=$xrayHasConfig")
 
             servers += ServerCandidate(serverId, serverCountry, ServerStatus.ONLINE, loadPercent, latencyMs, protocols, city, ip)
         }

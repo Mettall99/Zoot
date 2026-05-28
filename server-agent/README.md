@@ -53,3 +53,9 @@ curl http://127.0.0.1:9090/health
 
 - `POST /wireguard/provision` returns `ok: true` only when `generate-client.sh` exits with code `0`.
 - `generate-client.sh --json` should output JSON metadata (for example: `client_name`, `assigned_ip`, `public_key`, `config_path`) and must not include `PrivateKey` or full client config in JSON output.
+
+## Xray VLESS Reality TCP/443 fallback
+
+Use `server-agent/xray/generate-inbound-config.sh` to write `/usr/local/etc/xray/config.json` after installing Xray. The script intentionally reads the Reality private key from environment and writes it with `0600` permissions; do not commit generated configs or private keys.
+
+Full deployment and verification steps are documented in [`docs/xray-reality-vps.md`](../docs/xray-reality-vps.md).

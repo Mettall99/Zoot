@@ -30,6 +30,15 @@ describe('auth + config api', () => {
     query.mockReset();
     delete process.env.WIREGUARD_CLIENT_CONFIG_PATH;
     delete process.env.WIREGUARD_PROVISIONING_ENABLED;
+    delete process.env.XRAY_REALITY_ENABLED;
+    delete process.env.XRAY_REALITY_HOST;
+    delete process.env.XRAY_REALITY_PUBLIC_KEY;
+    delete process.env.XRAY_REALITY_SHORT_ID;
+    delete process.env.XRAY_REALITY_SERVER_NAME;
+    delete process.env.XRAY_REALITY_SNI;
+    delete process.env.XRAY_REALITY_PORT;
+    delete process.env.XRAY_REALITY_FLOW;
+    delete process.env.XRAY_REALITY_UUID;
     vi.restoreAllMocks();
   });
   it('register creates user', async () => { query.mockResolvedValueOnce({ rowCount: 0, rows: [] }).mockResolvedValueOnce({ rows: [{ id: 'u1', email: 'a@b.com' }] }); const r = await post('/api/v1/auth/register',{email:'a@b.com',password:'password123'}); expect(r.status).toBe(201); });
@@ -155,4 +164,47 @@ it('config_source=device only when config is non-empty', async () => {
   const body = await r.json();
   expect(body.servers[0].protocols[0].config_source).toBe('device');
   expect(body.servers[0].protocols[0].config).toContain('PrivateKey = prod');
+});
+
+it('resolve-token returns non-empty xray_vless_reality config when Reality env is complete', async () => {
+  process.env.XRAY_REALITY_ENABLED = 'true';
+  process.env.XRAY_REALITY_HOST = 'vpn.example.com';
+  process.env.XRAY_REALITY_PUBLIC_KEY = 'public-key';
+  process.env.XRAY_REALITY_SHORT_ID = 'a1b2c3d4';
+  process.env.XRAY_REALITY_SERVER_NAME = 'www.cloudflare.com';
+  process.env.XRAY_REALITY_UUID = '11111111-1111-4111-8111-111111111111';
+  query.mockResolvedValueOnce({ rowCount: 1, rows: [{ user_id:'22222222-2222-4222-8222-222222222222', id:'u1', email:'demo', tariff_id:'t1', tariff_code:'demo', tariff_title:'Demo', preferred_country:'DE' }] })
+    .mockResolvedValueOnce({ rows: [{ id:'s1', country_code:'DE', city:'Frankfurt', ip:'31.59.45.197', load_percent:20, type:'xray_vless_reality', priority:2, port:443, health_status:'healthy' }] });
+
+  const r = await post('/api/v1/config/resolve-token', { token:'demo-token', device_id:'android-123' });
+  expect(r.status).toBe(200);
+  const body = await r.json();
+  const protocol = body.servers[0].protocols[0];
+  expect(protocol.type).toBe('xray_vless_reality');
+  expect(protocol.port).toBe(443);
+  expect(protocol.config_source).toBe('xray_reality_env');
+  expect(protocol.config).toContain('"host":"vpn.example.com"');
+  expect(protocol.config).toContain('"port":443');
+  expect(protocol.config).toContain('"uuid":"11111111-1111-4111-8111-111111111111"');
+  expect(protocol.config).toContain('"publicKey":"public-key"');
+  expect(protocol.config).toContain('"shortId":"a1b2c3d4"');
+  expect(protocol.config).toContain('"serverName":"www.cloudflare.com"');
+});
+
+it('resolve-token does not expose xray_vless_reality as configured when Reality env is incomplete', async () => {
+  delete process.env.XRAY_REALITY_HOST;
+  delete process.env.XRAY_REALITY_SHORT_ID;
+  delete process.env.XRAY_REALITY_SERVER_NAME;
+  delete process.env.XRAY_REALITY_SNI;
+  delete process.env.XRAY_REALITY_UUID;
+  process.env.XRAY_REALITY_ENABLED = 'true';
+  process.env.XRAY_REALITY_PUBLIC_KEY = 'public-key';
+  query.mockResolvedValueOnce({ rowCount: 1, rows: [{ user_id:'u1', id:'u1', email:'demo', tariff_id:'t1', tariff_code:'demo', tariff_title:'Demo', preferred_country:'DE' }] })
+    .mockResolvedValueOnce({ rows: [{ id:'s1', country_code:'DE', city:'Frankfurt', ip:'31.59.45.197', load_percent:20, type:'xray_vless_reality', priority:2, port:443, health_status:'healthy' }] });
+
+  const r = await post('/api/v1/config/resolve-token', { token:'demo-token' });
+  expect(r.status).toBe(200);
+  const body = await r.json();
+  expect(body.servers[0].protocols[0].config).toBeNull();
+  expect(body.servers[0].protocols[0].config_source).toBeNull();
 });

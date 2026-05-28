@@ -12,26 +12,27 @@ data class HistoryVal(val success: Boolean, val failurePenalty: Int = 0)
 data class Selection(val serverId: String, val protocol: Proto, val configUrl: String, val score: Int, val config: String? = null, val port: Int? = null)
 
 object ProtocolSelector {
-    private fun hasValidWireGuardConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
-    private val protocolScore = mapOf(Proto.AMNEZIAWG to 50, Proto.XRAY_VLESS_REALITY to 45, Proto.WIREGUARD to 35, Proto.OPENVPN_UDP to 25, Proto.OPENVPN_TCP to 15)
+    private fun hasValidConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
+    private fun requiresConfig(proto: Proto): Boolean = proto == Proto.WIREGUARD || proto == Proto.XRAY_VLESS_REALITY
+    private val protocolScore = mapOf(Proto.WIREGUARD to 55, Proto.XRAY_VLESS_REALITY to 50, Proto.AMNEZIAWG to 45, Proto.OPENVPN_UDP to 25, Proto.OPENVPN_TCP to 15)
 
     fun select(servers: List<ServerCandidate>, country: String, network: NetworkType, history: Map<HistoryKey, HistoryVal>): Selection? {
-        // TODO: Replace MVP override with proper scoring based on real protocol availability, country, and network restrictions.
-        val wireguardMvp = servers.asSequence()
+        val stableWireGuard = servers.asSequence()
             .filter { it.country == country && it.status == ServerStatus.ONLINE }
             .flatMap { server ->
                 server.protocols.asSequence()
-                    .filter { it.type == Proto.WIREGUARD && it.health != HealthStatus.FAILED && hasValidWireGuardConfig(it.config) }
+                    .filter { it.type == Proto.WIREGUARD && it.health != HealthStatus.FAILED && hasValidConfig(it.config) }
+                    .filter { history[HistoryKey(network, server.serverId, Proto.WIREGUARD)]?.success != false }
                     .map { sp -> Selection(server.serverId, sp.type, sp.configUrl, Int.MAX_VALUE, sp.config, sp.port) }
             }
             .firstOrNull()
-        if (wireguardMvp != null) return wireguardMvp
+        if (stableWireGuard != null) return stableWireGuard
         val filtered = servers.filter { it.country == country && it.status == ServerStatus.ONLINE }
             .sortedWith(compareBy<ServerCandidate> { it.loadPercent }.thenBy { it.latencyMs })
 
         var best: Selection? = null
         for (server in filtered) {
-            for (sp in server.protocols.filter { it.health != HealthStatus.FAILED && (it.type != Proto.WIREGUARD || hasValidWireGuardConfig(it.config)) }) {
+            for (sp in server.protocols.filter { it.health != HealthStatus.FAILED && (!requiresConfig(it.type) || hasValidConfig(it.config)) }) {
                 val key = HistoryKey(network, server.serverId, sp.type)
                 val h = history[key]
                 val historyScore = when (h?.success) { true -> 20; false -> -30; null -> 0 }
