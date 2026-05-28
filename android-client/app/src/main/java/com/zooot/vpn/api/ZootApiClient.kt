@@ -95,8 +95,12 @@ object ZootApiClient {
                         val port = if (obj.hasNonNull("port")) obj.optInt("port", 0) else null
                         val configSource = obj.optString("config_source", "").ifBlank { null }
                         val configAvailable = isValidConfig(config)
-                        val configLen = if (configAvailable) config.length else 0
-                        safeLogDebug("resolve-token parse: protocol=${proto.name.lowercase()} server_id=$serverId config_source=${configSource ?: "none"} config_available=$configAvailable config_len=$configLen")
+                        if (proto == Proto.XRAY_VLESS_REALITY) {
+                            val flags = xrayRealitySafeFlags(config)
+                            safeLogDebug("resolve-token parse: protocol=xray_vless_reality config_source=${configSource ?: "none"} config_available=$configAvailable has_host=${flags.hasHost} has_port=${flags.hasPort} has_server_name=${flags.hasServerName} has_flow=${flags.hasFlow}")
+                        } else {
+                            safeLogDebug("resolve-token parse: protocol=${proto.name.lowercase()} config_source=${configSource ?: "none"} config_available=$configAvailable")
+                        }
                         protocols += ServerProtocol(proto, health, configUrl, config, port, configSource)
                         protocolTypes += proto.name.lowercase()
                     }
@@ -105,11 +109,35 @@ object ZootApiClient {
             if (protocols.isEmpty()) protocols += ServerProtocol(Proto.AMNEZIAWG, HealthStatus.HEALTHY, "")
             val wgHasConfig = protocols.any { it.type == Proto.WIREGUARD && isValidConfig(it.config) }
             val xrayHasConfig = protocols.any { it.type == Proto.XRAY_VLESS_REALITY && isValidConfig(it.config) }
-            safeLogDebug("resolve-token parse: server_id=$serverId protocols_count=${protocolItems.size()} protocol_types=$protocolTypes wireguard_config_available=$wgHasConfig xray_config_available=$xrayHasConfig")
+            safeLogDebug("resolve-token parse: protocols_count=${protocolItems.size()} wireguard_config_available=$wgHasConfig xray_config_available=$xrayHasConfig")
 
             servers += ServerCandidate(serverId, serverCountry, ServerStatus.ONLINE, loadPercent, latencyMs, protocols, city, ip)
         }
         return ResolveTokenResult(preferredCountry, userEmail, tariffTitle, servers)
+    }
+
+    private data class XraySafeFlags(val hasHost: Boolean, val hasPort: Boolean, val hasServerName: Boolean, val hasFlow: Boolean)
+
+    private fun xrayRealitySafeFlags(config: String?): XraySafeFlags {
+        if (!isValidConfig(config)) return XraySafeFlags(false, false, false, false)
+        return runCatching {
+            val root = JsonParser.parseString(config).takeIf { it.isJsonObject }?.asJsonObject
+            if (root != null) {
+                XraySafeFlags(
+                    hasHost = root.optString("host", "").isNotBlank(),
+                    hasPort = root.optInt("port", 0) > 0,
+                    hasServerName = root.optString("serverName", root.optString("server_name", "")).isNotBlank(),
+                    hasFlow = root.optString("flow", "").isNotBlank()
+                )
+            } else {
+                XraySafeFlags(
+                    hasHost = config!!.contains("@") && config.contains(":"),
+                    hasPort = Regex(":\\d+").containsMatchIn(config),
+                    hasServerName = config.contains("sni="),
+                    hasFlow = config.contains("flow=")
+                )
+            }
+        }.getOrDefault(XraySafeFlags(false, false, false, false))
     }
 
     private fun protoFromApi(name: String): Proto? = when (name.lowercase()) {
