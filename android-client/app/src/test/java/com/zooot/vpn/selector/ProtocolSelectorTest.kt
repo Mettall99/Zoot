@@ -15,3 +15,32 @@ class ProtocolSelectorTest {
         assertEquals(Proto.AMNEZIAWG, res?.protocol)
     }
 }
+
+class XrayRealitySelectionTest {
+    @Test
+    fun doesNotSelectXrayRealityWithNullOrEmptyConfig() {
+        val servers = listOf(
+            ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(
+                ServerProtocol(Proto.XRAY_VLESS_REALITY, HealthStatus.HEALTHY, "", null, 443),
+                ServerProtocol(Proto.XRAY_VLESS_REALITY, HealthStatus.HEALTHY, "", "", 443)
+            ))
+        )
+
+        val sel = ProtocolSelector.select(servers, "DE", NetworkType.WIFI, emptyMap())
+        assertEquals(null, sel)
+    }
+
+    @Test
+    fun prefersRealityFallbackWhenWireGuardPreviouslyFailed() {
+        val servers = listOf(
+            ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(
+                ServerProtocol(Proto.WIREGUARD, HealthStatus.HEALTHY, "", "[Interface]\nPrivateKey=hidden", 51821),
+                ServerProtocol(Proto.XRAY_VLESS_REALITY, HealthStatus.HEALTHY, "", "{\"protocol\":\"xray_vless_reality\",\"port\":443}", 443)
+            ))
+        )
+        val history = mapOf(HistoryKey(NetworkType.WIFI, "srv1", Proto.WIREGUARD) to HistoryVal(success = false, failurePenalty = 100))
+
+        val sel = ProtocolSelector.select(servers, "DE", NetworkType.WIFI, history)
+        assertEquals(Proto.XRAY_VLESS_REALITY, sel?.protocol)
+    }
+}

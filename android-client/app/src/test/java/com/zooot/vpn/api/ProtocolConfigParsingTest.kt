@@ -82,4 +82,18 @@ class ProtocolConfigParsingTest {
         val wg = result.servers.first().protocols.first { it.type == Proto.WIREGUARD }
         assertEquals("", wg.config)
     }
+    @Test
+    fun parsesXrayRealityConfigField() {
+        val raw = """
+            {"preferred_country":"DE","servers":[{"id":"srv1","country":"DE","protocols":[{"type":"xray_vless_reality","port":443,"health_status":"healthy","config":"{\"protocol\":\"xray_vless_reality\",\"host\":\"vpn.example.com\",\"port\":443}"}]}]}
+        """.trimIndent()
+        val method = ZootApiClient::class.java.getDeclaredMethod("parseResult", String::class.java)
+        method.isAccessible = true
+        val result = method.invoke(ZootApiClient, raw) as ResolveTokenResult
+        val xray = result.servers.first().protocols.first { it.type == Proto.XRAY_VLESS_REALITY }
+        assertEquals(443, xray.port)
+        assertNotNull(xray.config)
+        assertEquals(true, xray.config!!.contains("vpn.example.com"))
+    }
+
 }

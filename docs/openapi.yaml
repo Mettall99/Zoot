@@ -23,7 +23,35 @@ paths:
     post:
       summary: Resolve config token with subscription and servers
       responses:
-        '200': { description: Resolved }
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        protocols:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              type:
+                                type: string
+                                enum: [wireguard, xray_vless_reality, amneziawg, openvpn_udp, openvpn_tcp]
+                              port:
+                                type: integer
+                              config:
+                                type: string
+                                nullable: true
+                                description: Non-empty for provisioned WireGuard or Xray VLESS Reality client configs.
+                              config_source:
+                                type: string
+                                nullable: true
         '400': { description: VALIDATION_ERROR }
         '403': { description: SUBSCRIPTION_INACTIVE }
         '404': { description: CONFIG_TOKEN_NOT_FOUND }

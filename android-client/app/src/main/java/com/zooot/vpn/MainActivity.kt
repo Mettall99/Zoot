@@ -26,6 +26,7 @@ import com.zooot.vpn.vpn.protocol.ProtocolType
 import com.zooot.vpn.vpn.protocol.VpnConfig
 import com.zooot.vpn.vpn.protocol.VpnProtocolAdapter
 import com.zooot.vpn.vpn.protocol.WireGuardProtocolAdapter
+import com.zooot.vpn.vpn.protocol.XrayRealityProtocolAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity() {
         private const val DEFAULT_DEBUG_BACKEND_URL = "http://31.59.45.197:8080"
     }
     private lateinit var wireGuardAdapter: WireGuardProtocolAdapter
+    private val xrayRealityAdapter = XrayRealityProtocolAdapter()
     private val fakeAdapter = FakeVpnProtocolAdapter(ProtocolType.AMNEZIAWG)
     private var selectedServer: UiServer? = null
     private var selectedProtocol: UiProtocolOption? = null
@@ -159,9 +161,9 @@ class MainActivity : AppCompatActivity() {
                 resolveResult = result
                 val servers = result.servers.map { UiMapper.toUiServer(it) }
                 Log.d(TAG, "resolve-token success servers=${servers.size}")
-                if (servers.none { !it.wireGuardConfig.isNullOrBlank() && it.wireGuardConfig.trim().lowercase() != "null" }) {
+                if (servers.none { it.hasAnyConnectableConfig() }) {
                     showState(AppUiState.StartState)
-                    showError("Нет доступной WireGuard-конфигурации")
+                    showError("Нет доступной VPN-конфигурации")
                     return@launch
                 }
                 selectedServer = ServerRecommendation.pick(servers)
@@ -200,8 +202,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showConnectionScreen() {
         val server = selectedServer ?: return showError("Выберите сервер")
-        selectedProtocol = UiProtocolOption.wireguard(server.wireGuardConfig)
-        if (!selectedProtocol!!.enabled) return showError("Нет доступной WireGuard-конфигурации")
+        selectedProtocol = server.preferredProtocolOption()
+        if (selectedProtocol?.enabled != true) return showError("Нет доступной VPN-конфигурации")
         renderProtocols(server)
         showState(AppUiState.ConnectionSetupState)
     }
@@ -209,12 +211,18 @@ class MainActivity : AppCompatActivity() {
     private fun renderProtocols(server: UiServer) {
         protocolsList.removeAllViews()
         listOf(
-            UiProtocolOption.wireguard(server.wireGuardConfig), UiProtocolOption.disabled("AmneziaWG"), UiProtocolOption.disabled("VLESS Reality"),
-            UiProtocolOption.disabled("OpenVPN UDP"), UiProtocolOption.disabled("OpenVPN TCP")
+            UiProtocolOption.wireguard(server.wireGuardConfig, server.wireGuardConfigSource),
+            UiProtocolOption.xrayReality(server.xrayRealityConfig, server.xrayRealityConfigSource),
+            UiProtocolOption.disabled("AmneziaWG", ProtocolType.AMNEZIAWG),
+            UiProtocolOption.disabled("OpenVPN UDP", ProtocolType.OPENVPN_UDP),
+            UiProtocolOption.disabled("OpenVPN TCP", ProtocolType.OPENVPN_TCP)
         ).forEach { p ->
             val card = layoutInflater.inflate(R.layout.item_simple_card, protocolsList, false) as MaterialCardView
             card.findViewById<TextView>(R.id.cardTitle).text = p.name
-            card.findViewById<TextView>(R.id.cardSubtitle).text = if (p.enabled) { val src = server.wireGuardConfigSource?.let { " · Config source: $it" } ?: ""; "Доступно$src" } else "Скоро"
+            card.findViewById<TextView>(R.id.cardSubtitle).text = if (p.enabled) {
+                val src = p.configSource?.let { " · Config source: $it" } ?: ""
+                "Доступно$src"
+            } else "Скоро"
             card.alpha = if (p.enabled) 1f else 0.6f
             if (p.enabled) card.setOnClickListener { selectedProtocol = p; renderProtocols(server) }
             card.isChecked = selectedProtocol?.name == p.name
@@ -224,7 +232,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun connect() {
         val protocol = selectedProtocol ?: return showError("Выберите протокол")
-        if (protocol.name != "WireGuard" || protocol.config.isNullOrBlank() || protocol.config.trim().lowercase() == "null") return showError("WireGuard config is not available")
+        if (!protocol.enabled || protocol.config.isNullOrBlank() || protocol.config.trim().lowercase() == "null") return showError("Config is not available for ${protocol.name}")
         Log.d(TAG, "vpn permission check")
         val intent = VpnService.prepare(this)
         if (intent != null) {
@@ -248,11 +256,12 @@ class MainActivity : AppCompatActivity() {
         pendingVpnPermissionConnect = false
         lifecycleScope.launch {
             setConnecting(true)
-            Log.d(TAG, "wireguard connect start")
+            val adapter = adapterFor(protocol)
+            Log.d(TAG, "vpn connect start protocol=${protocol.type.name.lowercase()}")
             val result = withContext(Dispatchers.IO) {
-                wireGuardAdapter.connect(VpnConfig(server.id, "", protocol.config))
+                adapter.connect(VpnConfig(server.id, "", protocol.config))
             }
-            Log.d(TAG, "wireguard connect result success=${result.ok} message=${result.message.take(120)}")
+            Log.d(TAG, "vpn connect result protocol=${protocol.type.name.lowercase()} success=${result.ok} message=${result.message.take(120)}")
             if (result.ok) {
                 clearError()
                 session = ConnectionSession(server, protocol.name, SystemClock.elapsedRealtime())
@@ -263,7 +272,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 session = null
                 showState(AppUiState.ConnectionSetupState)
-                showError(result.message)
+                showError(connectionErrorMessage(protocol, result.message, server))
             }
             setConnecting(false)
         }
@@ -273,7 +282,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             Log.d(TAG, "disconnect start")
             setDisconnecting(true)
-            val adapter: VpnProtocolAdapter = if (selectedProtocol?.name == "WireGuard") wireGuardAdapter else fakeAdapter
+            val adapter: VpnProtocolAdapter = selectedProtocol?.let { adapterFor(it) } ?: fakeAdapter
             val result = withContext(Dispatchers.IO) { adapter.disconnect() }
             Log.d(TAG, "disconnect result success=${result.ok}")
             if (result.ok) {
@@ -289,6 +298,19 @@ class MainActivity : AppCompatActivity() {
             setDisconnecting(false)
         }
     }
+
+    private fun adapterFor(protocol: UiProtocolOption): VpnProtocolAdapter = when (protocol.type) {
+        ProtocolType.WIREGUARD -> wireGuardAdapter
+        ProtocolType.XRAY_VLESS_REALITY -> xrayRealityAdapter
+        else -> fakeAdapter
+    }
+
+    private fun connectionErrorMessage(protocol: UiProtocolOption, raw: String, server: UiServer): String =
+        if (protocol.type == ProtocolType.WIREGUARD && hasValidConfig(server.xrayRealityConfig))
+            "WireGuard handshake unstable. Try Reality/TCP fallback."
+        else raw
+
+    private fun hasValidConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
 
     private fun startTimer() {
         timerJob?.cancel()
@@ -364,8 +386,12 @@ class MainActivity : AppCompatActivity() {
 }
 
 sealed class AppUiState { object StartState: AppUiState(); object ServerSelectionState: AppUiState(); object ConnectionSetupState: AppUiState(); object ConnectedState: AppUiState() }
-data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?, val wireGuardConfigSource: String?)
-data class UiProtocolOption(val name: String, val enabled: Boolean, val config: String?) { companion object { fun wireguard(config: String?) = UiProtocolOption("WireGuard", isValidWireGuardConfig(config), config); fun disabled(name: String)=UiProtocolOption(name,false,null); private fun isValidWireGuardConfig(config: String?) = !config.isNullOrBlank() && config.trim().lowercase() != "null" } }
+data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?, val wireGuardConfigSource: String?, val xrayRealityConfig: String? = null, val xrayRealityConfigSource: String? = null) {
+    fun hasAnyConnectableConfig(): Boolean = hasValidConfig(wireGuardConfig) || hasValidConfig(xrayRealityConfig)
+    fun preferredProtocolOption(): UiProtocolOption = if (hasValidConfig(wireGuardConfig)) UiProtocolOption.wireguard(wireGuardConfig, wireGuardConfigSource) else UiProtocolOption.xrayReality(xrayRealityConfig, xrayRealityConfigSource)
+    private fun hasValidConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
+}
+data class UiProtocolOption(val name: String, val type: ProtocolType, val enabled: Boolean, val config: String?, val configSource: String?) { companion object { fun wireguard(config: String?, source: String?) = UiProtocolOption("WireGuard", ProtocolType.WIREGUARD, isValidConfig(config), config, source); fun xrayReality(config: String?, source: String?) = UiProtocolOption("VLESS Reality", ProtocolType.XRAY_VLESS_REALITY, isValidConfig(config), config, source); fun disabled(name: String, type: ProtocolType)=UiProtocolOption(name,type,false,null,null); private fun isValidConfig(config: String?) = !config.isNullOrBlank() && config.trim().lowercase() != "null" } }
 data class ConnectionSession(val server: UiServer, val protocol: String, val startedAtMs: Long)
 
 data class LinkValidationResult(val valid: Boolean, val token: String? = null, val error: String? = null)
@@ -382,9 +408,9 @@ object LinkFlowContract {
     const val DEVICE_NAME = "Android device"
     const val DEBUG_MVP_BACKEND_URL = "http://31.59.45.197:8080"
 }
-object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && !it.wireGuardConfig.isNullOrBlank() && it.wireGuardConfig.trim().lowercase() != "null" }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
+object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && it.hasAnyConnectableConfig() }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
 object TimerFormatter { fun formatElapsed(ms: Long): String { val total = ms/1000; val h=total/3600; val m=(total%3600)/60; val s=total%60; return "%02d:%02d:%02d".format(h,m,s) } }
-object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate): UiServer { val wg = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; return UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,wg?.config,wg?.configSource) } }
+object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate): UiServer { val wg = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; val xray = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.XRAY_VLESS_REALITY && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; return UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,wg?.config,wg?.configSource,xray?.config,xray?.configSource) } }
 
 data class TrafficStats(val rx: String, val tx: String)
 interface VpnTrafficStatsProvider { fun read(): TrafficStats }

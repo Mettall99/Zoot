@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import { getDb } from './db.js';
 import { apiError, zodToValidation } from './errors.js';
 import { DEFAULT_DEVICE_ID, getOrCreateWireGuardDeviceConfig, isProvisioningEnabled, normalizeDeviceInput } from './wireguard/provisioning.js';
+import { getXrayRealityConfig } from './xrayProvisioning.js';
 
 export const app = express();
 app.use(cors());
@@ -117,6 +118,8 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
       serversMap.set(r.id, { id: r.id, country: r.country_code, city: r.city, ip: r.ip, load_percent: r.load_percent, protocols: [] });
     }
     let wireguardResponse = { config: null as string | null, config_source: null as string | null };
+    let protocolConfig = null as string | null;
+    let protocolConfigSource = null as string | null;
     if (r.type === 'wireguard') {
       if (hasDeviceId && isProvisioningEnabled()) {
         try {
@@ -139,14 +142,22 @@ app.post('/api/v1/config/resolve-token', async (req, res) => {
           ? { config: demoWireguardConfig, config_source: 'demo_fallback' }
           : { config: null, config_source: null };
       }
+      protocolConfig = wireguardResponse.config;
+      protocolConfigSource = wireguardResponse.config_source;
+    } else if (r.type === 'xray_vless_reality') {
+      const xrayConfig = getXrayRealityConfig({ userId: row.user_id, serverIp: r.ip, port: r.port });
+      if (isValidConfig(xrayConfig)) {
+        protocolConfig = xrayConfig;
+        protocolConfigSource = 'xray_reality_env';
+      }
     }
     serversMap.get(r.id).protocols.push({
       type: r.type,
       priority: r.priority,
       port: r.port,
       health_status: r.health_status,
-      config: wireguardResponse.config,
-      config_source: r.type === 'wireguard' ? wireguardResponse.config_source : null
+      config: protocolConfig,
+      config_source: protocolConfigSource
     });
   }
 
