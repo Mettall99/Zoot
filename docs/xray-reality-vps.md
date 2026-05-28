@@ -101,3 +101,21 @@ curl -sS http://127.0.0.1:8080/api/v1/config/resolve-token \
 ```
 
 Expected result: `has_config` is `true`, `port` is `443`, and `config_source` is `xray_reality_env`.
+
+## 6. Android client config compatibility
+
+Android accepts the existing backend JSON config returned in the `config` string for `xray_vless_reality` and also accepts the embedded `vless://` URI. No backend API change is required.
+
+Required client fields are:
+
+- `protocol: "xray_vless_reality"`
+- `host`
+- `port` (defaults to `443` only for URI parsing; JSON should include it)
+- `uuid`
+- `public_key` or `publicKey`
+- `short_id` or `shortId`
+- `server_name` or `serverName`
+- optional `flow` (`xtls-rprx-vision` for the generated VPS inbound)
+- optional `fingerprint` (defaults to `chrome`)
+
+The Android adapter converts these fields to a sing-box config with a TUN inbound and VLESS Reality outbound. Current source does not vendor sing-box native libraries; builds without that dependency fail Reality preparation with `Reality core is not bundled in this build` instead of showing a false connected state.

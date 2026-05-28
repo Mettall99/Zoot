@@ -96,4 +96,30 @@ class ProtocolConfigParsingTest {
         assertEquals(true, xray.config!!.contains("vpn.example.com"))
     }
 
+    @Test
+    fun xrayRealityWithNonEmptyConfigIsAvailable() {
+        val raw = """
+            {"preferred_country":"DE","servers":[{"id":"srv1","country":"DE","protocols":[{"type":"xray_vless_reality","config_source":"xray_reality_env","config":"{\"protocol\":\"xray_vless_reality\",\"host\":\"vpn.example.com\",\"port\":443,\"uuid\":\"11111111-1111-1111-1111-111111111111\",\"public_key\":\"pub\",\"short_id\":\"sid\",\"server_name\":\"www.cloudflare.com\"}"}]}]}
+        """.trimIndent()
+        val method = ZootApiClient::class.java.getDeclaredMethod("parseResult", String::class.java)
+        method.isAccessible = true
+        val result = method.invoke(ZootApiClient, raw) as ResolveTokenResult
+        val xray = result.servers.first().protocols.first { it.type == Proto.XRAY_VLESS_REALITY }
+        assertNotNull(xray.config)
+        assertEquals("xray_reality_env", xray.configSource)
+    }
+
+    @Test
+    fun xrayRealityWithNullOrEmptyConfigIsUnavailable() {
+        val raw = """
+            {"preferred_country":"DE","servers":[{"id":"srv1","country":"DE","protocols":[{"type":"xray_vless_reality","config":null},{"type":"xray_vless_reality","config":""}]}]}
+        """.trimIndent()
+        val method = ZootApiClient::class.java.getDeclaredMethod("parseResult", String::class.java)
+        method.isAccessible = true
+        val result = method.invoke(ZootApiClient, raw) as ResolveTokenResult
+        result.servers.first().protocols.filter { it.type == Proto.XRAY_VLESS_REALITY }.forEach {
+            assertEquals("", it.config)
+        }
+    }
+
 }

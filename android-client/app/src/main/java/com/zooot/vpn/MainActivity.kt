@@ -258,8 +258,12 @@ class MainActivity : AppCompatActivity() {
             setConnecting(true)
             val adapter = adapterFor(protocol)
             Log.d(TAG, "vpn connect start protocol=${protocol.type.name.lowercase()}")
-            val result = withContext(Dispatchers.IO) {
-                adapter.connect(VpnConfig(server.id, "", protocol.config))
+            val vpnConfig = VpnConfig(server.id, "", protocol.config)
+            val prepareResult = withContext(Dispatchers.IO) { adapter.prepare(vpnConfig) }
+            val result = if (prepareResult.ok) {
+                withContext(Dispatchers.IO) { adapter.connect(vpnConfig) }
+            } else {
+                com.zooot.vpn.vpn.protocol.ConnectResult(false, prepareResult.message)
             }
             Log.d(TAG, "vpn connect result protocol=${protocol.type.name.lowercase()} success=${result.ok} message=${result.message.take(120)}")
             if (result.ok) {
