@@ -32,7 +32,7 @@ class XrayRealityProtocolAdapterTest {
 
     @Test
     fun prepare_returnsFailure_whenCoreDependencyMissing() = runBlocking {
-        val result = XrayRealityProtocolAdapter().prepare(VpnConfig("srv1", "", validJson))
+        val result = XrayRealityProtocolAdapter(MissingRealityCore()).prepare(VpnConfig("srv1", "", validJson))
 
         assertFalse(result.ok)
         assertEquals(XrayRealityProtocolAdapter.CORE_MISSING_MESSAGE, result.message)
@@ -64,6 +64,50 @@ class XrayRealityProtocolAdapterTest {
         assertFalse(sanitized.contains(uuid))
         assertFalse(sanitized.contains(publicKey))
         assertFalse(sanitized.contains(shortId))
+    }
+
+    @Test
+    fun connect_returnsUnavailable_forInvalidConfig() = runBlocking {
+        val core = FakeRealityCore(bundled = true)
+        val adapter = XrayRealityProtocolAdapter(core)
+
+        val result = adapter.connect(VpnConfig("srv1", "", null))
+
+        assertFalse(result.ok)
+        assertEquals("Reality/TCP config is not available", result.message)
+        assertEquals(null, core.startedConfig)
+    }
+
+    @Test
+    fun missingRealityCore_returnsFailureMessage() {
+        val core = MissingRealityCore()
+
+        assertFalse(core.isBundled())
+        assertEquals(XrayRealityProtocolAdapter.CORE_MISSING_MESSAGE, assertFailsWithMessage { core.start("{}") })
+    }
+
+    @Test
+    fun safeExceptionMessage_doesNotExposeSensitiveValues() {
+        val uuid = "11111111-1111-1111-1111-111111111111"
+        val publicKey = "PUBKEY_VALUE_1234567890"
+        val token = "token_abcdefghijklmnopqrstuvwxyz1234567890"
+
+        val sanitized = XrayRealityProtocolAdapter.safeExceptionMessage(
+            IllegalStateException("uuid=$uuid public_key=$publicKey token=$token")
+        )
+
+        assertFalse(sanitized.contains(uuid))
+        assertFalse(sanitized.contains(publicKey))
+        assertFalse(sanitized.contains(token))
+    }
+
+    private fun assertFailsWithMessage(block: () -> Unit): String {
+        return try {
+            block()
+            ""
+        } catch (e: IllegalStateException) {
+            e.message.orEmpty()
+        }
     }
 
     private class FakeRealityCore(private val bundled: Boolean) : RealityCore {

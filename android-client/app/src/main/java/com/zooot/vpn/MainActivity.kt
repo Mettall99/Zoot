@@ -40,7 +40,7 @@ class MainActivity : AppCompatActivity() {
         private const val DEFAULT_DEBUG_BACKEND_URL = "http://31.59.45.197:8080"
     }
     private lateinit var wireGuardAdapter: WireGuardProtocolAdapter
-    private val xrayRealityAdapter = XrayRealityProtocolAdapter()
+    private lateinit var xrayRealityAdapter: XrayRealityProtocolAdapter
     private val fakeAdapter = FakeVpnProtocolAdapter(ProtocolType.AMNEZIAWG)
     private var selectedServer: UiServer? = null
     private var selectedProtocol: UiProtocolOption? = null
@@ -87,6 +87,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         wireGuardAdapter = WireGuardProtocolAdapter(this)
+        xrayRealityAdapter = XrayRealityProtocolAdapter(this)
         trafficProvider = NoopTrafficStatsProvider
         bindViews()
         setupActions()

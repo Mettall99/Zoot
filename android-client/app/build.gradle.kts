@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -15,6 +15,9 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
         buildConfigField("String", "BACKEND_BASE_URL", "\"http://31.59.45.197:8080\"")
     }
 
@@ -45,6 +48,9 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            pickFirsts += listOf("**/libbox.so")
+        }
     }
 }
 
@@ -55,6 +61,7 @@ dependencies {
     implementation("com.wireguard.android:tunnel:1.0.20211029")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("net.clever-vpn:libbox-android:2.1.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")
