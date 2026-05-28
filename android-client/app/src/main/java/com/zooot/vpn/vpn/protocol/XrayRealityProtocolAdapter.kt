@@ -1,13 +1,15 @@
 package com.zooot.vpn.vpn.protocol
 
+import android.content.Context
 import android.util.Log
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.net.URLDecoder
 
 class XrayRealityProtocolAdapter(
-    private val core: RealityCore = MissingRealityCore()
+    private val core: RealityCore = SingBoxRealityCore()
 ) : VpnProtocolAdapter {
+    constructor(context: Context) : this(SingBoxRealityCore(context))
     override val type: ProtocolType = ProtocolType.XRAY_VLESS_REALITY
 
     companion object {
@@ -121,10 +123,13 @@ class XrayRealityProtocolAdapter(
 
     override suspend fun prepare(config: VpnConfig): PrepareResult {
         val parsed = parseConfig(config.config)
-            ?: return PrepareResult(false, "Reality/TCP config is not available")
+            ?: run {
+                safeLogDebug("prepare: protocol=xray_vless_reality config_available=false")
+                return PrepareResult(false, "Reality/TCP config is not available")
+            }
         logConfigAvailability(parsed, configAvailable = true)
         if (!core.isBundled()) {
-            safeLogWarn("prepare: protocol=xray_vless_reality config_available=true core_start_success=false missing_core=${core.missingDependencyName()}")
+            safeLogWarn("prepare: protocol=xray_vless_reality config_available=true core_start_success=false core_name=${core::class.java.simpleName} missing_core=${core.missingDependencyName()}")
             return PrepareResult(false, CORE_MISSING_MESSAGE)
         }
         return PrepareResult(true, "Prepared")
@@ -132,20 +137,23 @@ class XrayRealityProtocolAdapter(
 
     override suspend fun connect(config: VpnConfig): ConnectResult {
         val parsed = parseConfig(config.config)
-            ?: return ConnectResult(false, "Reality/TCP config is not available")
+            ?: run {
+                safeLogDebug("connect: protocol=xray_vless_reality config_available=false")
+                return ConnectResult(false, "Reality/TCP config is not available")
+            }
         logConfigAvailability(parsed, configAvailable = true)
         if (!core.isBundled()) {
-            safeLogWarn("connect: protocol=xray_vless_reality config_available=true core_start_success=false missing_core=${core.missingDependencyName()}")
+            safeLogWarn("connect: protocol=xray_vless_reality config_available=true core_start_success=false core_name=${core::class.java.simpleName} missing_core=${core.missingDependencyName()}")
             return ConnectResult(false, CORE_MISSING_MESSAGE)
         }
         return try {
             val singBoxConfig = buildSingBoxConfig(parsed)
             core.start(singBoxConfig)
             val running = core.isRunning()
-            safeLogDebug("connect: protocol=xray_vless_reality config_available=true core_start_success=$running")
+            safeLogDebug("connect: protocol=xray_vless_reality config_available=true core_name=${core::class.java.simpleName} core_start_success=$running")
             if (running) ConnectResult(true, "Connected") else ConnectResult(false, "Reality core failed to start")
         } catch (e: Exception) {
-            safeLogWarn("connect: protocol=xray_vless_reality core_start_success=false exception=${e::class.java.simpleName} message=${safeExceptionMessage(e)}")
+            safeLogWarn("connect: protocol=xray_vless_reality core_name=${core::class.java.simpleName} core_start_success=false exception=${e::class.java.simpleName} message=${safeExceptionMessage(e)}")
             ConnectResult(false, "Reality core failed to start")
         }
     }
@@ -154,7 +162,7 @@ class XrayRealityProtocolAdapter(
         core.stop()
         DisconnectResult(true, "Disconnected")
     } catch (e: Exception) {
-        safeLogWarn("disconnect: protocol=xray_vless_reality exception=${e::class.java.simpleName} message=${safeExceptionMessage(e)}")
+        safeLogWarn("disconnect: protocol=xray_vless_reality core_name=${core::class.java.simpleName} exception=${e::class.java.simpleName} message=${safeExceptionMessage(e)}")
         DisconnectResult(false, "Reality stop failed")
     }
 
@@ -199,7 +207,7 @@ interface RealityCore {
 
 class MissingRealityCore : RealityCore {
     override fun isBundled(): Boolean = false
-    override fun missingDependencyName(): String = "io.nekohasekai:libbox Android AAR or equivalent sing-box core"
+    override fun missingDependencyName(): String = SingBoxRealityCore.LIBBOX_DEPENDENCY_NAME
     override fun start(singBoxConfigJson: String) {
         throw IllegalStateException(XrayRealityProtocolAdapter.CORE_MISSING_MESSAGE)
     }
