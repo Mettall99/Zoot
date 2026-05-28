@@ -32,6 +32,7 @@ class ZootVpnService : VpnService() {
     private var worker: Thread? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        safeLogDebug("onStartCommand action=${intent?.action.orEmpty()}")
         when (intent?.action) {
             ACTION_START_REALITY -> startRealityService(intent.getStringExtra(EXTRA_CONFIG).orEmpty())
             ACTION_STOP_REALITY -> stopRealityService()
@@ -50,6 +51,7 @@ class ZootVpnService : VpnService() {
     }
 
     private fun startRealityService(config: String) {
+        safeLogDebug("startReality")
         if (config.isBlank()) {
             setStopped("empty sing-box config")
             stopSelf()
@@ -63,17 +65,15 @@ class ZootVpnService : VpnService() {
         worker = Thread({
             try {
                 val platform = LibboxPlatformProxy(this)
-                val libbox = Class.forName("io.nekohasekai.libbox.Libbox")
-                val platformInterface = Class.forName("io.nekohasekai.libbox.PlatformInterface")
-                val diagnostics = LibboxServiceReflection.diagnostics(libbox)
-                diagnostics.forEach { diagnostic -> safeLogDebug("Libbox.newService candidate: $diagnostic") }
-                val newService = LibboxServiceReflection.selectNewService(libbox, platformInterface)
-                val service = LibboxServiceReflection.invokeNewService(newService, config, platform.proxy)
+                safeLogDebug("core start begin")
+                val service = LibboxRuntimeSupport.start(config, platform.proxy, logger = { message -> safeLogDebug(message) })
                 boxService = service
                 service.javaClass.getMethod("start").invoke(service)
                 running.set(true)
+                safeLogDebug("core start success")
                 startLatch.get().countDown()
             } catch (e: Throwable) {
+                safeLogDebug("core start failure ${realityErrorMessage(e)}")
                 setStopped(realityErrorMessage(e))
             }
         }, "zooot-sing-box-reality")
@@ -100,6 +100,7 @@ class ZootVpnService : VpnService() {
     }
 
     private fun showForeground() {
+        safeLogDebug("showForeground")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "Zooot Reality VPN", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -124,7 +125,7 @@ class ZootVpnService : VpnService() {
             "usePlatformAutoDetectInterfaceControl" -> true
             "autoDetectInterfaceControl" -> service.protect((args?.get(0) as Number).toInt()).let { Unit }
             "openTun" -> runCatching { service.openTun(args?.get(0) ?: error("missing tun options")) }
-                .getOrElse { throw IllegalStateException("openTun failed: ${LibboxServiceReflection.sanitize(it.message)}", it) }
+                .getOrElse { throw IllegalStateException("openTun failed: ${LibboxRuntimeSupport.sanitize(it.message)}", it) }
             "useProcFS" -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
             "findConnectionOwner" -> newConnectionOwner(ProcessUid.INVALID)
             "packageNameByUid" -> packageNameByUid((args?.get(0) as Number).toInt())
@@ -151,6 +152,7 @@ class ZootVpnService : VpnService() {
         }
 
         private fun ZootVpnService.openTun(options: Any): Int {
+            safeLogDebug("openTun begin")
             val builder = Builder().setSession("Zooot Reality").setMtu(callInt(options, "getMTU", 9000))
             addAddresses(builder, options, "getInet4Address", ipv6 = false)
             addAddresses(builder, options, "getInet6Address", ipv6 = true)
@@ -166,6 +168,7 @@ class ZootVpnService : VpnService() {
             val pfd = builder.establish() ?: error("VpnService.Builder.establish returned null")
             tunFd?.close()
             tunFd = pfd
+            safeLogDebug("openTun success")
             return pfd.fd
         }
 
@@ -311,24 +314,25 @@ class ZootVpnService : VpnService() {
             context.startService(Intent(context, ZootVpnService::class.java).setAction(ACTION_STOP_REALITY))
         }
 
-        private fun safeLogDebug(message: String) { runCatching { Log.d(TAG, message) } }
+        private fun safeLogDebug(message: String) { runCatching { Log.d(TAG, LibboxRuntimeSupport.sanitize(message)) } }
+        internal fun inspectLibboxRuntime(): LibboxRuntimeInspection = LibboxRuntimeSupport.inspect()
 
         internal fun realityErrorMessage(e: Throwable): String {
             if (e is NoSuchMethodException) {
-                val sanitized = LibboxServiceReflection.sanitize(e.message)
-                return if (sanitized.startsWith("Libbox.newService signature not found")) sanitized else "NoSuchMethodException: $sanitized"
+                val sanitized = LibboxRuntimeSupport.sanitize(e.message)
+                return "NoSuchMethodException: $sanitized"
             }
             val message = e.message.orEmpty()
-            if (message.startsWith("Libbox.newService signature not found") ||
+            if (message.startsWith(LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE) ||
                 message.startsWith("NoSuchMethodException:") ||
                 message.startsWith("InvocationTargetException cause:") ||
                 message.startsWith("openTun failed:")
-            ) return LibboxServiceReflection.sanitize(message)
+            ) return LibboxRuntimeSupport.sanitize(message)
             val cause = e.cause
             if (cause != null && cause !== e) {
-                return "${e::class.java.simpleName} cause: ${cause::class.java.simpleName}: ${LibboxServiceReflection.sanitize(cause.message)}"
+                return "${e::class.java.simpleName} cause: ${cause::class.java.simpleName}: ${LibboxRuntimeSupport.sanitize(cause.message)}"
             }
-            return "${e::class.java.simpleName}: ${LibboxServiceReflection.sanitize(e.message)}"
+            return "${e::class.java.simpleName}: ${LibboxRuntimeSupport.sanitize(e.message)}"
         }
 
         fun awaitRealityRunning(timeoutMs: Long): Boolean = startLatch.get().await(timeoutMs, TimeUnit.MILLISECONDS) && running.get()
