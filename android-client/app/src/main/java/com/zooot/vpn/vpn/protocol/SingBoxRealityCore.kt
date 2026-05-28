@@ -10,7 +10,6 @@ class SingBoxRealityCore(
 
     override fun isBundled(): Boolean = runCatching {
         Class.forName(LIBBOX_CLASS_NAME)
-        Class.forName(LIBBOX_SERVICE_CLASS_NAME)
         Class.forName(LIBBOX_PLATFORM_INTERFACE_CLASS_NAME)
     }.isSuccess
 

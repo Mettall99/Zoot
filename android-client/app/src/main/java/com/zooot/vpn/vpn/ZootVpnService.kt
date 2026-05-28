@@ -11,9 +11,9 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.zooot.vpn.R
-import com.zooot.vpn.vpn.protocol.XrayRealityProtocolAdapter
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
@@ -65,19 +65,16 @@ class ZootVpnService : VpnService() {
                 val platform = LibboxPlatformProxy(this)
                 val libbox = Class.forName("io.nekohasekai.libbox.Libbox")
                 val platformInterface = Class.forName("io.nekohasekai.libbox.PlatformInterface")
-                val newService = libbox.methods.first { method ->
-                    method.name == "newService" && method.parameterTypes.size == 2 &&
-                        method.parameterTypes[0] == String::class.java &&
-                        method.parameterTypes[1].isAssignableFrom(platformInterface)
-                }
-                val service = newService.invoke(null, config, platform.proxy)
+                val diagnostics = LibboxServiceReflection.diagnostics(libbox)
+                diagnostics.forEach { diagnostic -> safeLogDebug("Libbox.newService candidate: $diagnostic") }
+                val newService = LibboxServiceReflection.selectNewService(libbox, platformInterface)
+                val service = LibboxServiceReflection.invokeNewService(newService, config, platform.proxy)
                 boxService = service
                 service.javaClass.getMethod("start").invoke(service)
                 running.set(true)
                 startLatch.get().countDown()
             } catch (e: Throwable) {
-                val cause = e.cause ?: e
-                setStopped("${cause::class.java.simpleName}: ${XrayRealityProtocolAdapter.safeExceptionMessage(cause)}")
+                setStopped(realityErrorMessage(e))
             }
         }, "zooot-sing-box-reality")
         worker?.start()
@@ -126,7 +123,8 @@ class ZootVpnService : VpnService() {
         override fun invoke(proxy: Any, method: Method, args: Array<out Any?>?): Any? = when (method.name) {
             "usePlatformAutoDetectInterfaceControl" -> true
             "autoDetectInterfaceControl" -> service.protect((args?.get(0) as Number).toInt()).let { Unit }
-            "openTun" -> service.openTun(args?.get(0) ?: error("missing tun options"))
+            "openTun" -> runCatching { service.openTun(args?.get(0) ?: error("missing tun options")) }
+                .getOrElse { throw IllegalStateException("openTun failed: ${LibboxServiceReflection.sanitize(it.message)}", it) }
             "useProcFS" -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
             "findConnectionOwner" -> newConnectionOwner(ProcessUid.INVALID)
             "packageNameByUid" -> packageNameByUid((args?.get(0) as Number).toInt())
@@ -298,6 +296,7 @@ class ZootVpnService : VpnService() {
         private const val EXTRA_CONFIG = "sing_box_config"
         private const val CHANNEL_ID = "reality_vpn"
         private const val NOTIFICATION_ID = 1001
+        private const val TAG = "ZootVpnService"
         private val running = java.util.concurrent.atomic.AtomicBoolean(false)
         private val lastError = AtomicReference<String?>(null)
         private val startLatch = AtomicReference(CountDownLatch(0))
@@ -310,6 +309,26 @@ class ZootVpnService : VpnService() {
 
         fun stopReality(context: Context) {
             context.startService(Intent(context, ZootVpnService::class.java).setAction(ACTION_STOP_REALITY))
+        }
+
+        private fun safeLogDebug(message: String) { runCatching { Log.d(TAG, message) } }
+
+        internal fun realityErrorMessage(e: Throwable): String {
+            if (e is NoSuchMethodException) {
+                val sanitized = LibboxServiceReflection.sanitize(e.message)
+                return if (sanitized.startsWith("Libbox.newService signature not found")) sanitized else "NoSuchMethodException: $sanitized"
+            }
+            val message = e.message.orEmpty()
+            if (message.startsWith("Libbox.newService signature not found") ||
+                message.startsWith("NoSuchMethodException:") ||
+                message.startsWith("InvocationTargetException cause:") ||
+                message.startsWith("openTun failed:")
+            ) return LibboxServiceReflection.sanitize(message)
+            val cause = e.cause
+            if (cause != null && cause !== e) {
+                return "${e::class.java.simpleName} cause: ${cause::class.java.simpleName}: ${LibboxServiceReflection.sanitize(cause.message)}"
+            }
+            return "${e::class.java.simpleName}: ${LibboxServiceReflection.sanitize(e.message)}"
         }
 
         fun awaitRealityRunning(timeoutMs: Long): Boolean = startLatch.get().await(timeoutMs, TimeUnit.MILLISECONDS) && running.get()

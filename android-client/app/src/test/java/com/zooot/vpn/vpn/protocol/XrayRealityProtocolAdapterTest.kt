@@ -101,6 +101,29 @@ class XrayRealityProtocolAdapterTest {
         assertFalse(sanitized.contains(token))
     }
 
+
+    @Test
+    fun connect_returnsDetailedRealityFailure_whenCoreThrows() = runBlocking {
+        val core = FailingRealityCore(IllegalStateException("Libbox.newService signature not found. candidates=1"))
+        val adapter = XrayRealityProtocolAdapter(core)
+
+        val result = adapter.connect(VpnConfig("srv1", "", validJson))
+
+        assertFalse(result.ok)
+        assertEquals("Reality failed: Libbox.newService signature not found. candidates=1", result.message)
+    }
+
+    @Test
+    fun connect_returnsDetailedRealityFailure_whenCoreDoesNotRun() = runBlocking {
+        val core = FakeRealityCore(bundled = true, runningAfterStart = false)
+        val adapter = XrayRealityProtocolAdapter(core)
+
+        val result = adapter.connect(VpnConfig("srv1", "", validJson))
+
+        assertFalse(result.ok)
+        assertEquals("Reality failed: service did not report running", result.message)
+    }
+
     private fun assertFailsWithMessage(block: () -> Unit): String {
         return try {
             block()
@@ -110,15 +133,22 @@ class XrayRealityProtocolAdapterTest {
         }
     }
 
-    private class FakeRealityCore(private val bundled: Boolean) : RealityCore {
+    private class FakeRealityCore(private val bundled: Boolean, private val runningAfterStart: Boolean = true) : RealityCore {
         var startedConfig: String? = null
         private var running = false
         override fun isBundled(): Boolean = bundled
         override fun start(singBoxConfigJson: String) {
             startedConfig = singBoxConfigJson
-            running = true
+            running = runningAfterStart
         }
         override fun stop() { running = false }
         override fun isRunning(): Boolean = running
+    }
+
+    private class FailingRealityCore(private val failure: RuntimeException) : RealityCore {
+        override fun isBundled(): Boolean = true
+        override fun start(singBoxConfigJson: String) { throw failure }
+        override fun stop() = Unit
+        override fun isRunning(): Boolean = false
     }
 }
