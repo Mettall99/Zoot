@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 class ZootVpnService : VpnService() {
     private var tunFd: ParcelFileDescriptor? = null
-    private var boxService: Any? = null
+    private var runtimeHandle: SingBoxRuntimeHandle? = null
     private var worker: Thread? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -66,27 +66,41 @@ class ZootVpnService : VpnService() {
             try {
                 val platform = LibboxPlatformProxy(this)
                 safeLogDebug("core start begin")
-                val service = LibboxRuntimeSupport.start(config, platform.proxy, logger = { message -> safeLogDebug(message) })
-                boxService = service
-                service.javaClass.getMethod("start").invoke(service)
+                val runtime = LibboxRuntimeSupport.start(config, platform.proxy, logger = { message -> safeLogDebug(message) })
+                runtimeHandle = runtime
+                runtime.start()
                 running.set(true)
                 safeLogDebug("core start success")
                 startLatch.get().countDown()
             } catch (e: Throwable) {
-                safeLogDebug("core start failure ${realityErrorMessage(e)}")
-                setStopped(realityErrorMessage(e))
+                val message = realityErrorMessage(e)
+                safeLogDebug("core start failure $message")
+                runCatching { runtimeHandle?.close() }
+                runtimeHandle = null
+                runCatching { tunFd?.close() }
+                tunFd = null
+                setStopped(message)
             }
         }, "zooot-sing-box-reality")
         worker?.start()
     }
 
     private fun stopRealityService() {
-        val service = boxService
-        boxService = null
-        runCatching { service?.javaClass?.getMethod("close")?.invoke(service) }
-        runCatching { tunFd?.close() }
+        safeLogDebug("stop begin")
+        val runtime = runtimeHandle
+        runtimeHandle = null
+        val stopFailure = runCatching { runtime?.close() }.exceptionOrNull()
+        val tunFailure = runCatching { tunFd?.close() }.exceptionOrNull()
         tunFd = null
         running.set(false)
+        if (stopFailure != null || tunFailure != null) {
+            val failure = stopFailure ?: tunFailure
+            val message = realityErrorMessage(failure ?: IllegalStateException("unknown stop failure"))
+            lastError.set(message)
+            safeLogDebug("stop failure $message")
+        } else {
+            safeLogDebug("stop success")
+        }
         stopLatch.get().countDown()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -125,7 +139,10 @@ class ZootVpnService : VpnService() {
             "usePlatformAutoDetectInterfaceControl" -> true
             "autoDetectInterfaceControl" -> service.protect((args?.get(0) as Number).toInt()).let { Unit }
             "openTun" -> runCatching { service.openTun(args?.get(0) ?: error("missing tun options")) }
-                .getOrElse { throw IllegalStateException("openTun failed: ${LibboxRuntimeSupport.sanitize(it.message)}", it) }
+                .getOrElse {
+                    safeLogDebug("createTun failure ${LibboxRuntimeSupport.sanitize(it.message)}")
+                    throw IllegalStateException("openTun failed: ${LibboxRuntimeSupport.sanitize(it.message)}", it)
+                }
             "useProcFS" -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
             "findConnectionOwner" -> newConnectionOwner(ProcessUid.INVALID)
             "packageNameByUid" -> packageNameByUid((args?.get(0) as Number).toInt())
@@ -152,7 +169,7 @@ class ZootVpnService : VpnService() {
         }
 
         private fun ZootVpnService.openTun(options: Any): Int {
-            safeLogDebug("openTun begin")
+            safeLogDebug("createTun begin")
             val builder = Builder().setSession("Zooot Reality").setMtu(callInt(options, "getMTU", 9000))
             addAddresses(builder, options, "getInet4Address", ipv6 = false)
             addAddresses(builder, options, "getInet6Address", ipv6 = true)
@@ -168,7 +185,7 @@ class ZootVpnService : VpnService() {
             val pfd = builder.establish() ?: error("VpnService.Builder.establish returned null")
             tunFd?.close()
             tunFd = pfd
-            safeLogDebug("openTun success")
+            safeLogDebug("createTun success")
             return pfd.fd
         }
 

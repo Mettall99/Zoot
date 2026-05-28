@@ -61,7 +61,12 @@ dependencies {
     implementation("com.wireguard.android:tunnel:1.0.20211029")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("com.google.code.gson:gson:2.11.0")
-    implementation("net.clever-vpn:libbox-android:2.1.0")
+    // Runtime is loaded reflectively from an official/current sing-box libbox AAR.
+    // Place the generated AAR at app/libs/sing-box-libbox.aar; the old net.clever-vpn AAR is intentionally not used.
+    val singBoxLibboxAar = file("libs/sing-box-libbox.aar")
+    if (singBoxLibboxAar.exists()) {
+        implementation(files(singBoxLibboxAar))
+    }
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")

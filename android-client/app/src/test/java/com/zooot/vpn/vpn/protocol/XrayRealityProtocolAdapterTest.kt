@@ -31,6 +31,20 @@ class XrayRealityProtocolAdapterTest {
     }
 
     @Test
+    fun buildSingBoxConfig_containsTunInboundAndVlessRealityOutbound() {
+        val parsed = XrayRealityProtocolAdapter.parseConfig(validJson)!!
+
+        val config = XrayRealityProtocolAdapter.buildSingBoxConfig(parsed)
+
+        assertTrue(config.contains("\"type\":\"tun\""))
+        assertTrue(config.contains("\"tag\":\"tun-in\""))
+        assertTrue(config.contains("\"type\":\"vless\""))
+        assertTrue(config.contains("\"reality\""))
+        assertTrue(config.contains("\"public_key\""))
+        assertTrue(config.contains("\"short_id\""))
+    }
+
+    @Test
     fun prepare_returnsFailure_whenCoreDependencyMissing() = runBlocking {
         val result = XrayRealityProtocolAdapter(MissingRealityCore()).prepare(VpnConfig("srv1", "", validJson))
 
