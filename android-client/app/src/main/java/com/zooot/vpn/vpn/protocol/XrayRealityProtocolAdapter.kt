@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.zooot.vpn.vpn.LibboxRuntimeSupport
 import java.net.URLDecoder
 
 class XrayRealityProtocolAdapter(
@@ -15,6 +16,7 @@ class XrayRealityProtocolAdapter(
     companion object {
         private const val TAG = "XrayRealityAdapter"
         const val CORE_MISSING_MESSAGE = "Reality core is not bundled in this build"
+        val UNSUPPORTED_CORE_MESSAGE = LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE
 
         private fun hasValidConfig(config: String?): Boolean =
             !config.isNullOrBlank() && config.trim().lowercase() != "null"
@@ -131,9 +133,9 @@ class XrayRealityProtocolAdapter(
                 return PrepareResult(false, "Reality/TCP config is not available")
             }
         logConfigAvailability(parsed, configAvailable = true)
-        if (!core.isBundled()) {
-            safeLogWarn("prepare: protocol=xray_vless_reality config_available=true core_start_success=false core_name=${core::class.java.simpleName} missing_core=${core.missingDependencyName()}")
-            return PrepareResult(false, CORE_MISSING_MESSAGE)
+        core.unavailableReason()?.let { reason ->
+            safeLogWarn("prepare: protocol=xray_vless_reality config_available=true core_start_success=false core_name=${core::class.java.simpleName} unavailable_core=$reason")
+            return PrepareResult(false, reason)
         }
         return PrepareResult(true, "Prepared")
     }
@@ -145,9 +147,9 @@ class XrayRealityProtocolAdapter(
                 return ConnectResult(false, "Reality/TCP config is not available")
             }
         logConfigAvailability(parsed, configAvailable = true)
-        if (!core.isBundled()) {
-            safeLogWarn("connect: protocol=xray_vless_reality config_available=true core_start_success=false core_name=${core::class.java.simpleName} missing_core=${core.missingDependencyName()}")
-            return ConnectResult(false, CORE_MISSING_MESSAGE)
+        core.unavailableReason()?.let { reason ->
+            safeLogWarn("connect: protocol=xray_vless_reality config_available=true core_start_success=false core_name=${core::class.java.simpleName} unavailable_core=$reason")
+            return ConnectResult(false, reason)
         }
         return try {
             val singBoxConfig = buildSingBoxConfig(parsed)
@@ -207,6 +209,7 @@ data class XrayRealityClientConfig(
 interface RealityCore {
     fun isBundled(): Boolean
     fun missingDependencyName(): String = ""
+    fun unavailableReason(): String? = if (isBundled()) null else XrayRealityProtocolAdapter.CORE_MISSING_MESSAGE
     fun start(singBoxConfigJson: String)
     fun stop()
     fun isRunning(): Boolean

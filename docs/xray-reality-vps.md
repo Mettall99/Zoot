@@ -118,4 +118,4 @@ Required client fields are:
 - optional `flow` (`xtls-rprx-vision` for the generated VPS inbound)
 - optional `fingerprint` (defaults to `chrome`)
 
-The Android adapter converts these fields to a sing-box config with a TUN inbound and VLESS Reality outbound. Current source does not vendor sing-box native libraries; builds without that dependency fail Reality preparation with `Reality core is not bundled in this build` instead of showing a false connected state.
+The Android adapter converts these fields to a sing-box config with a TUN inbound and VLESS Reality outbound. The currently bundled `net.clever-vpn:libbox-android:2.1.0` API is detected as unsupported for direct VPN runtime startup, so Reality preparation/connection fails with `Current libbox dependency does not expose VPN runtime API` instead of showing a false connected state.

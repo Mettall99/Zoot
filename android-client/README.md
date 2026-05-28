@@ -19,70 +19,50 @@ WireGuard remains the default protocol when a valid WireGuard config is returned
 
 ### VLESS Reality over TCP/443
 
-The Android client bundles and uses a real sing-box/libbox Android core for `xray_vless_reality` configs returned by `/api/v1/config/resolve-token`.
+The Android client keeps the existing parser for `xray_vless_reality` configs returned by `/api/v1/config/resolve-token` and converts valid configs into sing-box JSON with a `tun` inbound and VLESS Reality outbound.
+
+The current Maven dependency is still bundled:
+
+```kotlin
+implementation("net.clever-vpn:libbox-android:2.1.0")
+```
+
+Runtime inspection of that AAR shows that `io.nekohasekai.libbox.Libbox` exposes command/profile helpers such as `setup`, `checkConfig`, `newCommandClient`, `newCommandServer`, `newStandaloneCommandClient`, and `version`, but it does **not** expose a VPN service/runtime factory such as `BoxService`. The app therefore no longer attempts the invalid `Libbox.newService` reflection path.
+
+Until the dependency is replaced with an official sing-box Android libbox build that exposes a service/runtime API, or a native sing-box runtime wrapper is added, Reality preparation/connection fails explicitly with:
+
+```text
+Current libbox dependency does not expose VPN runtime API
+```
 
 The Reality path now:
 
 - validates non-empty Reality configs;
 - accepts the backend JSON format and VLESS Reality URI format;
 - converts the client config into a sing-box JSON config with a `tun` inbound and VLESS Reality outbound;
-- starts/stops the Android `VpnService` runtime through libbox;
-- reports success only after the libbox service has started and the adapter observes a running state.
-
-#### Core dependency used
-
-Gradle dependency:
-
-```kotlin
-implementation("net.clever-vpn:libbox-android:2.1.0")
-```
-
-This AAR is a prebuilt Android gomobile libbox package for sing-box. It exposes the `io.nekohasekai.libbox` API and includes the native `libbox.so` runtime used by `ZootVpnService`.
-
-Required repositories are already configured in `android-client/settings.gradle.kts`:
-
-```kotlin
-google()
-mavenCentral()
-```
-
-No local AAR is required for the default build. If Maven Central is unavailable in a restricted environment, place the same AAR at:
-
-```text
-android-client/app/libs/libbox-android-2.1.0.aar
-```
-
-and temporarily replace the Maven dependency with:
-
-```kotlin
-implementation(files("libs/libbox-android-2.1.0.aar"))
-```
+- keeps Android `VpnService` permission and foreground-service entry points;
+- logs `Libbox.version()` and sanitized public method diagnostics when the runtime API is missing;
+- reports success only if a future supported runtime starts and reports `running=true`;
+- reports the explicit unsupported-core error instead of pretending the tunnel is connected.
 
 #### Build
 
-Use JDK 17 and run from `android-client/`:
+Use JDK 17 and run from the repository root:
 
 ```bash
-gradle testDebugUnitTest --no-daemon --max-workers=1 --stacktrace
-gradle assembleDebug --no-daemon --max-workers=1
-```
-
-The project currently does not include a Gradle wrapper script; if one is added later, the equivalent Windows commands are:
-
-```bat
-.\gradlew.bat testDebugUnitTest --no-daemon --max-workers=1 --stacktrace
-.\gradlew.bat assembleDebug --no-daemon --max-workers=1
+./gradlew.bat clean testDebugUnitTest --no-daemon --max-workers=1 --stacktrace
+./gradlew.bat clean assembleDebug --no-daemon --max-workers=1
 ```
 
 #### Android service integration
 
-`com.zooot.vpn.vpn.ZootVpnService` is declared as the app-owned `VpnService`. It creates the Android TUN file descriptor requested by libbox, starts the libbox `BoxService` with the generated sing-box JSON, protects core sockets from VPN routing, and closes both libbox and the TUN descriptor on disconnect/revoke.
+`com.zooot.vpn.vpn.ZootVpnService` is declared as the app-owned `VpnService`. It owns the foreground-service lifecycle and contains the Android TUN builder/protection callbacks required by a proper sing-box Android runtime. With `net.clever-vpn:libbox-android:2.1.0`, startup stops before reporting success because the bundled API does not expose that runtime surface.
 
 #### Known limitations
 
-- The implementation depends on the `io.nekohasekai.libbox` API exposed by `net.clever-vpn:libbox-android:2.1.0`.
-- Unit tests mock `RealityCore`; full tunnel validation still requires an Android device/emulator with VPN permission granted.
-- The local CI/container may fail dependency resolution if outbound access to Google Maven or Maven Central is blocked. In that case, use the local AAR path described above.
+- `net.clever-vpn:libbox-android:2.1.0` is detected as unsupported for direct VPN runtime startup.
+- Unit tests mock `RealityCore`; full tunnel validation still requires replacing the core dependency and testing on an Android device/emulator with VPN permission granted.
+- The local CI/container may fail dependency resolution if outbound access to Google Maven or Maven Central is blocked.
 
 ## Logging policy
 

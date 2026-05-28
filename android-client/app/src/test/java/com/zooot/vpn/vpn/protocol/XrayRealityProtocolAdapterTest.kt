@@ -39,6 +39,14 @@ class XrayRealityProtocolAdapterTest {
     }
 
     @Test
+    fun prepare_returnsExplicitUnsupportedCoreError_whenRuntimeApiMissing() = runBlocking {
+        val result = XrayRealityProtocolAdapter(UnsupportedRealityCore()).prepare(VpnConfig("srv1", "", validJson))
+
+        assertFalse(result.ok)
+        assertEquals(XrayRealityProtocolAdapter.UNSUPPORTED_CORE_MESSAGE, result.message)
+    }
+
+    @Test
     fun prepareAndConnect_returnSuccess_whenCoreAvailable() = runBlocking {
         val core = FakeRealityCore(bundled = true)
         val adapter = XrayRealityProtocolAdapter(core)
@@ -104,13 +112,13 @@ class XrayRealityProtocolAdapterTest {
 
     @Test
     fun connect_returnsDetailedRealityFailure_whenCoreThrows() = runBlocking {
-        val core = FailingRealityCore(IllegalStateException("Libbox.newService signature not found. candidates=1"))
+        val core = FailingRealityCore(IllegalStateException(XrayRealityProtocolAdapter.UNSUPPORTED_CORE_MESSAGE))
         val adapter = XrayRealityProtocolAdapter(core)
 
         val result = adapter.connect(VpnConfig("srv1", "", validJson))
 
         assertFalse(result.ok)
-        assertEquals("Reality failed: Libbox.newService signature not found. candidates=1", result.message)
+        assertEquals("Reality failed: ${XrayRealityProtocolAdapter.UNSUPPORTED_CORE_MESSAGE}", result.message)
     }
 
     @Test
@@ -143,6 +151,14 @@ class XrayRealityProtocolAdapterTest {
         }
         override fun stop() { running = false }
         override fun isRunning(): Boolean = running
+    }
+
+    private class UnsupportedRealityCore : RealityCore {
+        override fun isBundled(): Boolean = true
+        override fun unavailableReason(): String = XrayRealityProtocolAdapter.UNSUPPORTED_CORE_MESSAGE
+        override fun start(singBoxConfigJson: String) = error("unsupported core should not be started")
+        override fun stop() = Unit
+        override fun isRunning(): Boolean = false
     }
 
     private class FailingRealityCore(private val failure: RuntimeException) : RealityCore {
