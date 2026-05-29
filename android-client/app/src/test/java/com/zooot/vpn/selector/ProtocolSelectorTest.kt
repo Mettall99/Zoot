@@ -44,3 +44,18 @@ class XrayRealitySelectionTest {
         assertEquals(Proto.XRAY_VLESS_REALITY, sel?.protocol)
     }
 }
+
+class OutlineShadowsocksSelectionTest {
+    @Test
+    fun selectsOutlineShadowsocksWithConfig() {
+        val servers = listOf(
+            ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(
+                ServerProtocol(Proto.OUTLINE_SHADOWSOCKS, HealthStatus.HEALTHY, "", "ss://aes-256-gcm:pass@example.com:8388", 8388)
+            ))
+        )
+
+        val sel = ProtocolSelector.select(servers, "DE", NetworkType.WIFI, emptyMap())
+
+        assertEquals(Proto.OUTLINE_SHADOWSOCKS, sel?.protocol)
+    }
+}

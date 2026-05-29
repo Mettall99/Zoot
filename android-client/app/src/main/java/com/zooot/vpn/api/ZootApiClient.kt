@@ -143,6 +143,7 @@ object ZootApiClient {
     private fun protoFromApi(name: String): Proto? = when (name.lowercase()) {
         "amneziawg" -> Proto.AMNEZIAWG
         "xray_vless_reality" -> Proto.XRAY_VLESS_REALITY
+        "outline_shadowsocks", "shadowsocks_outline", "shadowsocks" -> Proto.OUTLINE_SHADOWSOCKS
         "wireguard" -> Proto.WIREGUARD
         "openvpn_udp" -> Proto.OPENVPN_UDP
         "openvpn_tcp" -> Proto.OPENVPN_TCP

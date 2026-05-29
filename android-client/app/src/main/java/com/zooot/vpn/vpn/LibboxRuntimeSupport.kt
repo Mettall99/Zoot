@@ -121,6 +121,8 @@ internal object LibboxRuntimeSupport {
         ?.replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}"), "<redacted>")
         ?.replace(Regex("(?i)(uuid|public_?key|short_?id|sid|token|private_?key|host|server_name|server)[=:/][^\\s,;)]*"), "\$1=<redacted>")
         ?.replace(Regex("vless://[^\\s,;)]*", RegexOption.IGNORE_CASE), "vless://<redacted>")
+        ?.replace(Regex("ss://[^\\s,;)]*", RegexOption.IGNORE_CASE), "ss://<redacted>")
+        ?.replace(Regex("""(?i)"password"\s*:\s*"[^"]*"""), "\"password\":\"<redacted>\"")
         ?.replace(Regex("[A-Za-z0-9_-]{32,}"), "<redacted>")
         ?.take(160)
         ?: ""
