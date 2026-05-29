@@ -4,13 +4,22 @@ object RuntimeCapableLibbox {
     @JvmStatic fun version(): String = "1.13.12-test"
 }
 
+object CommandServerOnlyLibbox {
+    @JvmStatic fun version(): String = "1.13.12-command-only-test"
+    @JvmStatic fun newCommandServer(handler: CommandServerHandler, platform: PlatformInterface): CommandServer = CommandServer(handler, platform)
+}
+
 object Libbox {
     @JvmStatic fun version(): String = "1.13.12-test"
     @JvmStatic fun newService(config: String, platform: PlatformInterface): BoxService = BoxService(config, platform)
     @JvmStatic fun newCommandServer(handler: CommandServerHandler, platform: PlatformInterface): CommandServer = CommandServer(handler, platform)
 }
 
-interface PlatformInterface
+interface PlatformInterface {
+    fun openTun(options: TunOptions): Int
+}
+
+class TunOptions
 interface CommandServerHandler {
     fun serviceStop()
     fun serviceReload()
@@ -25,6 +34,7 @@ class BoxService(private val config: String, private val platform: PlatformInter
     var started = false
     fun start() {
         check(config.contains("tun-in")) { "config missing tun inbound" }
+        platform.openTun(TunOptions())
         started = true
     }
     fun needWIFIState(): Boolean = false
