@@ -18,6 +18,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.zooot.vpn.api.DeviceIdentity
 import com.zooot.vpn.api.ApiHttpException
+import com.zooot.vpn.api.DemoConfigUnavailableException
 import com.zooot.vpn.api.ResolveTokenResult
 import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.deeplink.DeepLinkParser
@@ -232,6 +233,9 @@ class MainActivity : AppCompatActivity() {
                 resolveResult = result
                 val servers = result.servers.map { UiMapper.toUiServer(it) }
                 Log.d(TAG, "resolve-token success servers=${servers.size}")
+                if (servers.any { hasValidConfig(it.outlineShadowsocksConfig) }) {
+                    Log.d(TAG, "protocol selected=outline_shadowsocks")
+                }
                 if (servers.none { it.hasAnyConnectableConfig() }) {
                     showState(AppUiState.StartState)
                     showError("Нет доступной VPN-конфигурации")
@@ -254,6 +258,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun mapResolveError(e: Exception): String = when (e) {
+        is DemoConfigUnavailableException -> e.message ?: "Outline Shadowsocks server is not configured"
         is ApiHttpException -> if (e.code == 401 || e.code == 404) "Ссылка недействительна" else "Не удалось подключиться к серверу"
         is IOException -> "Не удалось подключиться к серверу"
         else -> "Не удалось подключиться к серверу"
@@ -294,6 +299,8 @@ class MainActivity : AppCompatActivity() {
             card.findViewById<TextView>(R.id.cardSubtitle).text = if (p.enabled) {
                 val src = p.configSource?.let { " · Config source: $it" } ?: ""
                 "Доступно$src"
+            } else if (p.type == ProtocolType.OUTLINE_SHADOWSOCKS) {
+                "Outline Shadowsocks server is not configured"
             } else "Скоро"
             card.alpha = if (p.enabled) 1f else 0.6f
             if (p.enabled) card.setOnClickListener { selectedProtocol = p; renderProtocols(server) }
