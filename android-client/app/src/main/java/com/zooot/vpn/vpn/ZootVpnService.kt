@@ -120,7 +120,7 @@ class ZootVpnService : VpnService() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Zooot VPN")
             .setContentText("Reality/TCP tunnel running")
             .setOngoing(true)
