@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import com.google.gson.JsonParser
 import org.junit.Test
 
 class XrayRealityProtocolAdapterTest {
@@ -42,6 +43,17 @@ class XrayRealityProtocolAdapterTest {
         assertTrue(config.contains("\"reality\""))
         assertTrue(config.contains("\"public_key\""))
         assertTrue(config.contains("\"short_id\""))
+
+        val root = JsonParser.parseString(config).asJsonObject
+        val tunInbound = root.getAsJsonArray("inbounds").first { it.asJsonObject.get("type").asString == "tun" }.asJsonObject
+        val vlessOutbound = root.getAsJsonArray("outbounds").first { it.asJsonObject.get("type").asString == "vless" }.asJsonObject
+        assertEquals("tun", tunInbound.get("type").asString)
+        assertEquals("vless", vlessOutbound.get("type").asString)
+        assertTrue(vlessOutbound.get("server_port").asJsonPrimitive.isNumber)
+        assertTrue(vlessOutbound.has("flow"))
+        assertTrue(vlessOutbound.get("tls").isJsonObject)
+        assertTrue(vlessOutbound.getAsJsonObject("tls").get("reality").isJsonObject)
+        assertTrue(vlessOutbound.getAsJsonObject("tls").get("utls").isJsonObject)
     }
 
     @Test

@@ -50,7 +50,7 @@ class XrayRealityProtocolAdapter(
                         addProperty("server", client.host)
                         addProperty("server_port", client.port)
                         addProperty("uuid", client.uuid)
-                        client.flow?.takeIf { it.isNotBlank() }?.let { addProperty("flow", it.toString()) }
+                        addProperty("flow", client.flow.orEmpty())
                         add("tls", JsonObject().apply {
                             addProperty("enabled", true)
                             addProperty("server_name", client.serverName)

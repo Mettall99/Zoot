@@ -3,6 +3,7 @@ package com.zooot.vpn.vpn
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlin.test.assertFailsWith
 import org.junit.Test
 
 class LibboxRuntimeSupportTest {
@@ -27,6 +28,15 @@ class LibboxRuntimeSupportTest {
         }
 
         assertEquals(LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE, error)
+    }
+
+    @Test
+    fun inspect_prefersBoxServiceFactory_whenBundledRuntimeExposesDirectService() {
+        val inspection = LibboxRuntimeSupport.inspect(io.nekohasekai.libbox.Libbox::class.java.classLoader)
+
+        assertTrue(inspection.libboxPresent)
+        assertTrue(inspection.runtimeSupported)
+        assertEquals(LibboxRuntimeSupport.BOX_SERVICE_BACKEND, inspection.backendName)
     }
 
     @Test
@@ -78,6 +88,34 @@ class LibboxRuntimeSupportTest {
     }
 
     @Test
+    fun successfulRuntimeStart_setsRunningTrueOnlyAfterStartSucceeds() {
+        val runtime = RecordingRuntime()
+
+        ZootVpnService.startRuntimeForTest { runtime }
+
+        assertTrue(runtime.started)
+        assertTrue(ZootVpnService.isRealityRunning())
+        assertEquals(null, ZootVpnService.lastRealityError())
+    }
+
+    @Test
+    fun runtimeStartFailure_setsLastRealityError_andDoesNotReportRunning() {
+        ZootVpnService.startRuntimeForTest { RecordingRuntime(IllegalStateException("boom from runtime")) }
+
+        assertFalse(ZootVpnService.isRealityRunning())
+        assertEquals("IllegalStateException: boom from runtime", ZootVpnService.lastRealityError())
+    }
+
+    @Test
+    fun start_throwsExplicitUnsupportedCoreError_whenRuntimeApiMissing() {
+        val error = assertFailsWith<IllegalStateException> {
+            LibboxRuntimeSupport.start("{}", Any(), CommandOnlyLibbox::class.java.classLoader, logger = {}, libboxClassName = CommandOnlyLibbox::class.java.name, commandServerClassName = "missing.CommandServer")
+        }
+
+        assertEquals(LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE, error.message)
+    }
+
+    @Test
     fun realityErrorMessage_reportsUnsupportedRuntime() {
         val error = ZootVpnService.realityErrorMessage(IllegalStateException(LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE))
 
@@ -90,4 +128,13 @@ class LibboxRuntimeSupportTest {
 
         assertEquals("openTun failed: VpnService.Builder.establish returned null", error)
     }
+}
+
+private class RecordingRuntime(private val failure: Throwable? = null) : SingBoxRuntimeHandle {
+    var started = false
+    override fun start() {
+        failure?.let { throw it }
+        started = true
+    }
+    override fun close() = Unit
 }
