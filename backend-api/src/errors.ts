@@ -6,7 +6,11 @@ export type ApiErrorCode =
   | 'INVALID_CREDENTIALS'
   | 'CONFIG_TOKEN_NOT_FOUND'
   | 'SUBSCRIPTION_INACTIVE'
-  | 'INVALID_DEVICE_ID';
+  | 'INVALID_DEVICE_ID'
+  | 'VPN_CONFIG_TOKEN_CREATE_FAILED'
+  | 'RATE_LIMITED'
+  | 'VPN_CONFIG_RESOLVE_FAILED'
+  | 'VPN_CONFIG_TOKEN_REVOKE_FAILED';
 
 export const apiError = (code: ApiErrorCode, message: string) => ({ error: { code, message } });
 

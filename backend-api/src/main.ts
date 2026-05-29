@@ -9,6 +9,7 @@ import { getDb } from './db.js';
 import { apiError, zodToValidation } from './errors.js';
 import { DEFAULT_DEVICE_ID, getOrCreateWireGuardDeviceConfig, isProvisioningEnabled, normalizeDeviceInput } from './wireguard/provisioning.js';
 import { getXrayRealityConfig } from './xrayProvisioning.js';
+import { createConfigTokenSchema, resolveVpnTokenSchema, revokeTokenParamsSchema, VpnConfigTokenService } from './vpnConfigTokenService.js';
 
 export const app = express();
 app.use(cors());
@@ -17,6 +18,21 @@ app.use(express.json());
 const authSchema = z.object({ email: z.string().email(), password: z.string().min(8) });
 const resolveTokenSchema = z.object({ token: z.string().min(1), device_id: z.string().optional(), device_name: z.string().optional() });
 const MAX_WIREGUARD_CONFIG_BYTES = 64 * 1024;
+
+const resolveRateLimit = new Map<string, { count: number; resetAt: number }>();
+const checkResolveRateLimit = (key: string): boolean => {
+  const now = Date.now();
+  const windowMs = Number(process.env.VPN_RESOLVE_RATE_LIMIT_WINDOW_MS || 60_000);
+  const max = Number(process.env.VPN_RESOLVE_RATE_LIMIT_MAX || 60);
+  const current = resolveRateLimit.get(key);
+  if (!current || current.resetAt <= now) {
+    resolveRateLimit.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  current.count += 1;
+  return current.count <= max;
+};
+
 
 const isValidConfig = (config: unknown): config is string => typeof config === 'string' && config.trim().length > 0 && config.trim().toLowerCase() !== 'null';
 
@@ -69,6 +85,52 @@ app.post('/api/v1/auth/login', async (req, res) => {
   const accessToken = jwt.sign({ sub: user.rows[0].id }, process.env.JWT_SECRET || 'dev', { expiresIn: '15m' });
   const refreshToken = jwt.sign({ sub: user.rows[0].id }, process.env.JWT_REFRESH_SECRET || 'dev2', { expiresIn: '7d' });
   return res.json({ accessToken, refreshToken });
+});
+
+
+app.post('/api/v1/vpn/config-tokens', async (req, res) => {
+  const parsed = createConfigTokenSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(zodToValidation(parsed.error));
+
+  try {
+    const service = new VpnConfigTokenService(getDb());
+    const result = await service.create(parsed.data);
+    return res.status(201).json({ configUrl: result.configUrl, protocols: result.protocols });
+  } catch (error: any) {
+    const message = error?.message?.includes('Outline') || error?.message?.includes('OUTLINE_API_URL')
+      ? 'Outline create failure'
+      : 'Unable to create VPN config token';
+    return res.status(502).json(apiError('VPN_CONFIG_TOKEN_CREATE_FAILED', message));
+  }
+});
+
+app.post('/api/v1/vpn/config/resolve', async (req, res) => {
+  const key = `${req.ip}:${String(req.body?.token || '').slice(0, 8)}`;
+  if (!checkResolveRateLimit(key)) return res.status(429).json(apiError('RATE_LIMITED', 'Too many resolve requests'));
+
+  const parsed = resolveVpnTokenSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(zodToValidation(parsed.error));
+
+  try {
+    const service = new VpnConfigTokenService(getDb());
+    const result = await service.resolve(parsed.data.token);
+    return res.status(result.statusCode).json(result.body);
+  } catch {
+    return res.status(500).json(apiError('VPN_CONFIG_RESOLVE_FAILED', 'Unable to resolve VPN config token'));
+  }
+});
+
+app.post('/api/v1/vpn/config-tokens/:id/revoke', async (req, res) => {
+  const parsed = revokeTokenParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json(zodToValidation(parsed.error));
+
+  try {
+    const service = new VpnConfigTokenService(getDb());
+    const result = await service.revoke(parsed.data.id);
+    return res.status(result.statusCode).json(result.body);
+  } catch {
+    return res.status(502).json(apiError('VPN_CONFIG_TOKEN_REVOKE_FAILED', 'Unable to revoke VPN config token'));
+  }
 });
 
 app.post('/api/v1/config/resolve-token', async (req, res) => {

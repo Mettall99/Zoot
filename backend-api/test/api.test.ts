@@ -208,3 +208,104 @@ it('resolve-token does not expose xray_vless_reality as configured when Reality 
   expect(body.servers[0].protocols[0].config).toBeNull();
   expect(body.servers[0].protocols[0].config_source).toBeNull();
 });
+
+it('create vpn config token returns zoootconf and stores only hash plus encrypted ss uri', async () => {
+  vi.restoreAllMocks();
+  query.mockReset();
+  process.env.OUTLINE_API_URL = 'https://outline.example.test/api';
+  process.env.VPN_CONFIG_TOKEN_SECRET = 'test-token-secret';
+  process.env.VPN_CREDENTIALS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef';
+  process.env.VPN_DEFAULT_SERVER_ID = 'outline-main-1';
+  const originalFetch = globalThis.fetch;
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init: any) => {
+    if (String(url).startsWith(base)) return originalFetch(url, init);
+    const method = init?.method || 'GET';
+    if (String(url).endsWith('/access-keys') && method === 'POST') {
+      return new Response(JSON.stringify({ id: 'outline-key-1', name: '', password: 'secret-password', port: 31601, method: 'chacha20-ietf-poly1305', accessUrl: 'ss://secret-password@example.com:31601#u1' }), { status: 200 });
+    }
+    if (String(url).endsWith('/access-keys/outline-key-1/name') && method === 'PUT') return new Response('', { status: 200 });
+    return new Response('', { status: 404 });
+  });
+  query.mockResolvedValueOnce({ rows: [{ id: '11111111-1111-4111-8111-111111111111' }] })
+    .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+  const r = await post('/api/v1/vpn/config-tokens', { userId: 'user-1', protocols: ['outline_shadowsocks'], serverId: 'outline-main-1' });
+  expect(r.status).toBe(201);
+  const body = await r.json();
+  expect(body.configUrl).toMatch(/^zoootconf:\/\//);
+  const rawToken = body.configUrl.replace('zoootconf://', '');
+  expect(query.mock.calls[0][0]).toContain('INSERT INTO vpn_config_tokens');
+  expect(query.mock.calls[0][1][1]).not.toBe(rawToken);
+  expect(query.mock.calls[0][1][1]).toMatch(/^[a-f0-9]{64}$/);
+  expect(query.mock.calls[1][0]).toContain('INSERT INTO vpn_protocol_credentials');
+  expect(query.mock.calls[1][1][4]).not.toContain('ss://');
+  expect(fetchSpy).toHaveBeenCalledWith('https://outline.example.test/api/access-keys', expect.objectContaining({ method: 'POST', headers: { 'content-type': 'application/json' } }));
+});
+
+it('resolve valid vpn config token returns outline_shadowsocks connectUri', async () => {
+  vi.restoreAllMocks();
+  query.mockReset();
+  process.env.VPN_CONFIG_TOKEN_SECRET = 'test-token-secret';
+  process.env.VPN_CREDENTIALS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef';
+  const { encryptConnectUri } = await import('../src/vpnSecurity.js');
+  query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'token-id', user_id: 'user-1', token_prefix: 'real-tok', status: 'active', expires_at: null }] })
+    .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+    .mockResolvedValueOnce({ rows: [{ protocol: 'outline_shadowsocks', server_id: 'outline-main-1', external_key_id: 'outline-key-1', encrypted_connect_uri: encryptConnectUri('ss://secret-password@example.com:31601#u1'), status: 'active' }] });
+  const r = await post('/api/v1/vpn/config/resolve', { token: 'real-token-1234567890' });
+  expect(r.status).toBe(200);
+  const body = await r.json();
+  expect(body.recommendedProtocol).toBe('outline_shadowsocks');
+  expect(body.protocols[0].connectUri).toBe('ss://secret-password@example.com:31601#u1');
+});
+
+it('resolve invalid and revoked vpn config tokens return explicit errors', async () => {
+  vi.restoreAllMocks();
+  query.mockReset();
+  process.env.VPN_CONFIG_TOKEN_SECRET = 'test-token-secret';
+  query.mockResolvedValueOnce({ rowCount: 0, rows: [] });
+  const invalid = await post('/api/v1/vpn/config/resolve', { token: 'invalid-token-123456' });
+  expect(invalid.status).toBe(404);
+  expect((await invalid.json()).message).toBe('Invalid config token');
+
+  query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'token-id', user_id: 'user-1', token_prefix: 'revoked-', status: 'revoked', expires_at: null }] });
+  const revoked = await post('/api/v1/vpn/config/resolve', { token: 'revoked-token-123456' });
+  expect(revoked.status).toBe(403);
+  expect((await revoked.json()).message).toBe('Config token revoked');
+});
+
+it('outline create failure returns explicit error without logging secrets', async () => {
+  vi.restoreAllMocks();
+  query.mockReset();
+  process.env.OUTLINE_API_URL = 'https://outline.example.test/api';
+  process.env.VPN_CONFIG_TOKEN_SECRET = 'test-token-secret';
+  process.env.VPN_CREDENTIALS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef';
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const originalFetch = globalThis.fetch;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init: any) => {
+    if (String(url).startsWith(base)) return originalFetch(url, init);
+    return new Response('bad ss://secret-password@example.com', { status: 500 }) as any;
+  });
+  query.mockResolvedValueOnce({ rows: [{ id: 'token-id' }] });
+  const r = await post('/api/v1/vpn/config-tokens', { userId: 'user-1', protocols: ['outline_shadowsocks'] });
+  expect(r.status).toBe(502);
+  expect((await r.json()).error.message).toBe('Outline create failure');
+  const logs = warn.mock.calls.flat().join('\n');
+  expect(logs).not.toContain('ss://secret-password');
+  expect(logs).not.toContain('secret-password');
+});
+
+it('revoke vpn config token deletes outline access key', async () => {
+  vi.restoreAllMocks();
+  query.mockReset();
+  process.env.OUTLINE_API_URL = 'https://outline.example.test/api';
+  const originalFetch = globalThis.fetch;
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init: any) => {
+    if (String(url).startsWith(base)) return originalFetch(url, init);
+    return new Response('', { status: 200 }) as any;
+  });
+  query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'token-id', token_prefix: 'token-pr' }] })
+    .mockResolvedValueOnce({ rows: [{ protocol: 'outline_shadowsocks', external_key_id: 'outline-key-1' }] });
+  const r = await post('/api/v1/vpn/config-tokens/11111111-1111-4111-8111-111111111111/revoke', {});
+  expect(r.status).toBe(200);
+  expect(fetchSpy).toHaveBeenCalledWith('https://outline.example.test/api/access-keys/outline-key-1', expect.objectContaining({ method: 'DELETE' }));
+});

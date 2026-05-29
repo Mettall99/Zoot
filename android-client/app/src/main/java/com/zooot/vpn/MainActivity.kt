@@ -35,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import com.google.gson.JsonParser
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -259,10 +260,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun mapResolveError(e: Exception): String = when (e) {
         is DemoConfigUnavailableException -> e.message ?: "Outline Shadowsocks server is not configured"
-        is ApiHttpException -> if (e.code == 401 || e.code == 404) "Ссылка недействительна" else "Не удалось подключиться к серверу"
+        is ApiHttpException -> e.backendMessage() ?: if (e.code == 401 || e.code == 404) "Ссылка недействительна" else "Не удалось подключиться к серверу"
         is IOException -> "Не удалось подключиться к серверу"
         else -> "Не удалось подключиться к серверу"
     }
+
+    private fun ApiHttpException.backendMessage(): String? = runCatching {
+        val root = JsonParser.parseString(responseBody).takeIf { it.isJsonObject }?.asJsonObject ?: return null
+        val error = root.get("error")?.takeIf { it.isJsonObject }?.asJsonObject
+        val message = error?.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: root.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+        message?.takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     private fun renderServers(servers: List<UiServer>) {
         serversList.removeAllViews()

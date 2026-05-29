@@ -35,8 +35,7 @@ object ZootApiClient {
                 safeLogDebug("zoootconf resolve success protocol=outline_shadowsocks")
             }
         }
-        val body = buildResolveTokenBody(token, deviceId, deviceName)
-        val response = postJson("$backendUrl/api/v1/config/resolve-token", body)
+        val response = postJson("$backendUrl/api/v1/vpn/config/resolve", buildVpnResolveBody(token))
         return parseResult(response)
     }
     fun buildResolveTokenBody(token: String, deviceId: String, deviceName: String): String =
@@ -45,6 +44,9 @@ object ZootApiClient {
             addProperty("device_id", deviceId)
             addProperty("device_name", deviceName)
         }.toString()
+
+    fun buildVpnResolveBody(token: String): String =
+        JsonObject().apply { addProperty("token", token) }.toString()
 
     private fun postJson(endpoint: String, body: String): String {
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -65,6 +67,10 @@ object ZootApiClient {
 
     private fun parseResult(rawJson: String): ResolveTokenResult {
         val root = JsonParser.parseString(rawJson).takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+        if (root.hasNonNull("protocols") && root.optArray("protocols") != null && root.optString("status", "") == "active") {
+            return parseVpnConfigResolveResult(root)
+        }
+
         val preferredCountry = root.optString("preferred_country", "")
         val userEmail = root.optObject("user")?.optString("email", "").orEmpty()
         val tariffTitle = root.optObject("tariff")?.optString("title", "").orEmpty()
@@ -123,6 +129,33 @@ object ZootApiClient {
         return ResolveTokenResult(preferredCountry, userEmail, tariffTitle, servers)
     }
 
+
+    private fun parseVpnConfigResolveResult(root: JsonObject): ResolveTokenResult {
+        val protocolItems = root.optArray("protocols") ?: JsonArray()
+        val protocols = mutableListOf<ServerProtocol>()
+        var serverId = "outline-main-1"
+        var country = "DE"
+        var city = ""
+        for (p in 0 until protocolItems.size()) {
+            val obj = protocolItems[p].takeIf { it.isJsonObject }?.asJsonObject ?: continue
+            val proto = protoFromApi(obj.optString("type", obj.optString("protocol", ""))) ?: continue
+            val connectUri = obj.optString("connectUri", obj.optString("config", ""))
+            val config = connectUri.takeIf { isValidConfig(it) } ?: ""
+            val server = obj.optObject("server")
+            if (server != null) {
+                serverId = server.optString("id", serverId)
+                country = server.optString("country", country)
+                city = server.optString("city", city)
+            }
+            protocols += ServerProtocol(proto, HealthStatus.HEALTHY, "", config, null, "server_generated")
+            safeLogDebug("vpn config resolve parse: protocol=${proto.name.lowercase()} config_available=${isValidConfig(config)}")
+        }
+        val servers = if (protocols.isEmpty()) emptyList() else listOf(
+            ServerCandidate(serverId, country, ServerStatus.ONLINE, 0, 0, protocols, city, "")
+        )
+        return ResolveTokenResult(country, "", "Zooot VPN", servers)
+    }
+
     private data class XraySafeFlags(val hasHost: Boolean, val hasPort: Boolean, val hasServerName: Boolean, val hasFlow: Boolean)
 
     private fun xrayRealitySafeFlags(config: String?): XraySafeFlags {
@@ -173,7 +206,7 @@ private fun JsonObject.optArray(name: String): JsonArray? =
 private fun JsonObject.optObject(name: String): JsonObject? =
     get(name)?.takeIf { it.isJsonObject }?.asJsonObject
 
-class ApiHttpException(val code: Int, body: String): IOException("Backend HTTP $code: $body")
+class ApiHttpException(val code: Int, val responseBody: String): IOException("Backend HTTP $code: $responseBody")
 
 data class ResolveTokenResult(
     val preferredCountry: String,

@@ -77,4 +77,25 @@ class NewFlowUnitTest {
         assertEquals("1", ServerRecommendation.pick(servers)?.id)
     }
     @Test fun timerFormattingWorks() { assertEquals("00:00:05", TimerFormatter.formatElapsed(5000)) }
+    @Test fun realTokenResolveBodyContainsOnlyRawToken() {
+        val body = ZootApiClient.buildVpnResolveBody("real-token")
+        val json = JsonParser.parseString(body).asJsonObject
+        assertEquals("real-token", json.get("token").asString)
+        assertFalse(json.has("device_id"))
+    }
+
+    @Test fun backendOutlineShadowsocksResponseCanSelectOutlineAdapter() {
+        val ss = "ss://aes-256-gcm:demo-password@example.com:8388#Server"
+        val servers = listOf(
+            ServerCandidate("outline-main-1", "DE", ServerStatus.ONLINE, 0, 0, listOf(ServerProtocol(Proto.OUTLINE_SHADOWSOCKS, HealthStatus.HEALTHY, "", ss, null, "server_generated")), "Frankfurt", "")
+        )
+        val selection = com.zooot.vpn.selector.ProtocolSelector.select(servers, "DE", com.zooot.vpn.selector.NetworkType.WIFI, emptyMap())
+        assertEquals(Proto.OUTLINE_SHADOWSOCKS, selection?.protocol)
+        assertEquals(ss, selection?.config)
+    }
+
+    @Test fun directSsAndVlessSchemesStillResolveToAdapters() {
+        assertEquals(com.zooot.vpn.vpn.protocol.ProtocolType.OUTLINE_SHADOWSOCKS, com.zooot.vpn.vpn.protocol.ProtocolSchemeSelector.typeForConnectionString("ss://aes-256-gcm:pass@example.com:8388"))
+        assertEquals(com.zooot.vpn.vpn.protocol.ProtocolType.XRAY_VLESS_REALITY, com.zooot.vpn.vpn.protocol.ProtocolSchemeSelector.typeForConnectionString("vless://uuid@example.com:443"))
+    }
 }

@@ -32,6 +32,11 @@ services:
       WIREGUARD_AGENT_URL: http://host.docker.internal:9090
       WIREGUARD_AGENT_TOKEN: change-me
       WIREGUARD_CLIENT_CONFIG_PATH: /app/runtime/wireguard/clients/demo.conf
+      OUTLINE_API_URL: ${OUTLINE_API_URL:-https://OUTLINE_HOST:OUTLINE_PORT/SECRET_PATH}
+      OUTLINE_CERT_SHA256: ${OUTLINE_CERT_SHA256:-change-me-cert-pin}
+      VPN_CONFIG_TOKEN_SECRET: ${VPN_CONFIG_TOKEN_SECRET:-change-me-token-hmac-secret}
+      VPN_CREDENTIALS_ENCRYPTION_KEY: ${VPN_CREDENTIALS_ENCRYPTION_KEY:-change-me-32-bytes-or-base64}
+      VPN_DEFAULT_SERVER_ID: ${VPN_DEFAULT_SERVER_ID:-outline-main-1}
     ports: ["8080:8080"]
     depends_on: [postgres, redis]
 
