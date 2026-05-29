@@ -1,5 +1,7 @@
 package com.zooot.vpn
 
+import com.zooot.vpn.api.DemoConfigResolver
+import com.zooot.vpn.api.DemoConfigUnavailableException
 import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.selector.HealthStatus
 import com.zooot.vpn.selector.Proto
@@ -21,6 +23,36 @@ class NewFlowUnitTest {
         val json = JsonParser.parseString(body).asJsonObject
         assertEquals("device-1", json.get("device_id").asString)
         assertEquals(LinkFlowContract.DEVICE_NAME, json.get("device_name").asString)
+    }
+
+    @Test fun demoTokenResolvesToOutlineShadowsocksWhenDemoSsUriConfigured() {
+        val uri = "ss://aes-256-gcm:demo-password@example.com:8388#Demo"
+        val result = DemoConfigResolver.resolveDemoToken(uri)
+        val protocol = result.servers.first().protocols.first()
+        assertEquals(Proto.OUTLINE_SHADOWSOCKS, protocol.type)
+        assertEquals(uri, protocol.config)
+        assertEquals("zoootconf_demo", protocol.configSource)
+    }
+
+    @Test fun demoTokenReturnsExplicitErrorWhenDemoSsUriMissing() {
+        val error = runCatching { DemoConfigResolver.resolveDemoToken("") }.exceptionOrNull()
+        assertTrue(error is DemoConfigUnavailableException)
+        assertEquals(DemoConfigResolver.NOT_CONFIGURED_MESSAGE, error!!.message)
+    }
+
+    @Test fun outlineShadowsocksIsAvailableOnlyWhenConfigExists() {
+        val available = UiProtocolOption.outlineShadowsocks("ss://aes-256-gcm:demo-password@example.com:8388", "zoootconf_demo")
+        val missing = UiProtocolOption.outlineShadowsocks("", "zoootconf_demo")
+        assertTrue(available.enabled)
+        assertFalse(missing.enabled)
+    }
+
+    @Test fun demoSsUriIsNotLeakedInErrorStrings() {
+        val secret = "ss://aes-256-gcm:super-secret-password@example.com:8388?plugin=v2ray#Demo"
+        val error = runCatching { DemoConfigResolver.resolveDemoToken(secret) }.exceptionOrNull()
+        assertNotNull(error)
+        assertFalse(error!!.message.orEmpty().contains(secret))
+        assertFalse(error.message.orEmpty().contains("super-secret-password"))
     }
     @Test fun defaultDebugBackendUrlIsMvpBackend() { assertEquals("http://31.59.45.197:8080", LinkFlowContract.DEBUG_MVP_BACKEND_URL) }
     @Test fun invalidLinkValidation() { val r = LinkInputParser.validate("http://bad"); assertFalse(r.valid); assertEquals("Неверный формат ссылки", r.error) }

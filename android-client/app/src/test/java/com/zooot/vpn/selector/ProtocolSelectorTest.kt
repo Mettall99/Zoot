@@ -47,6 +47,20 @@ class XrayRealitySelectionTest {
 
 class OutlineShadowsocksSelectionTest {
     @Test
+    fun doesNotSelectOutlineShadowsocksWithoutConfig() {
+        val servers = listOf(
+            ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(
+                ServerProtocol(Proto.OUTLINE_SHADOWSOCKS, HealthStatus.HEALTHY, "", "", 8388),
+                ServerProtocol(Proto.OUTLINE_SHADOWSOCKS, HealthStatus.HEALTHY, "", null, 8388)
+            ))
+        )
+
+        val sel = ProtocolSelector.select(servers, "DE", NetworkType.WIFI, emptyMap())
+
+        assertEquals(null, sel)
+    }
+
+    @Test
     fun selectsOutlineShadowsocksWithConfig() {
         val servers = listOf(
             ServerCandidate("srv1", "DE", ServerStatus.ONLINE, 20, 20, listOf(

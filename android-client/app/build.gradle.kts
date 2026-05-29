@@ -1,7 +1,22 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+
+fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val localProperties = Properties().apply {
+    val candidates = listOf(rootProject.file("local.properties"), rootProject.file("../local.properties"))
+    candidates.firstOrNull { it.isFile }?.inputStream()?.use(::load)
+}
+
+val demoShadowsocksUri = providers.environmentVariable("ZOOOT_DEMO_SS_URI").orNull
+    ?: localProperties.getProperty("ZOOOT_DEMO_SS_URI")
+    ?: localProperties.getProperty("zooot.demo.ss.uri")
+    ?: ""
 
 android {
     namespace = "com.zooot.vpn"
@@ -19,6 +34,7 @@ android {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
         buildConfigField("String", "BACKEND_BASE_URL", "\"http://31.59.45.197:8080\"")
+        buildConfigField("String", "ZOOOT_DEMO_SS_URI", demoShadowsocksUri.asBuildConfigString())
     }
 
     buildTypes {
