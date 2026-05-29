@@ -8,7 +8,7 @@ import java.lang.reflect.Modifier
 internal object LibboxRuntimeSupport {
     const val UNSUPPORTED_CORE_MESSAGE = "Current bundled libbox does not expose Android VPN/TUN runtime API"
     const val COMMAND_SERVER_ONLY_MESSAGE = "Bundled libbox exposes CommandServer only, but no Android VPN/TUN runtime API is available"
-    const val COMMAND_SERVER_BACKEND = "sing-box libbox CommandServer diagnostics"
+    const val COMMAND_SERVER_BACKEND = "sing-box libbox CommandServer service runtime"
     const val BOX_SERVICE_BACKEND = "sing-box libbox BoxService"
     private const val LIBBOX_CLASS_NAME = "io.nekohasekai.libbox.Libbox"
     private const val BOX_SERVICE_CLASS_NAME = "io.nekohasekai.libbox.BoxService"
@@ -16,6 +16,7 @@ internal object LibboxRuntimeSupport {
     private const val COMMAND_SERVER_HANDLER_CLASS_NAME = "io.nekohasekai.libbox.CommandServerHandler"
     private const val OVERRIDE_OPTIONS_CLASS_NAME = "io.nekohasekai.libbox.OverrideOptions"
     private const val PLATFORM_INTERFACE_CLASS_NAME = "io.nekohasekai.libbox.PlatformInterface"
+    private const val TUN_OPTIONS_CLASS_NAME = "io.nekohasekai.libbox.TunOptions"
     private const val TAG = "LibboxRuntimeSupport"
 
     fun inspect(
@@ -24,25 +25,28 @@ internal object LibboxRuntimeSupport {
         boxServiceClassName: String = BOX_SERVICE_CLASS_NAME,
         commandServerClassName: String = COMMAND_SERVER_CLASS_NAME,
         commandServerHandlerClassName: String = COMMAND_SERVER_HANDLER_CLASS_NAME,
-        overrideOptionsClassName: String = OVERRIDE_OPTIONS_CLASS_NAME
+        overrideOptionsClassName: String = OVERRIDE_OPTIONS_CLASS_NAME,
+        platformInterfaceClassName: String = PLATFORM_INTERFACE_CLASS_NAME
     ): LibboxRuntimeInspection {
         val libboxClass = runCatching { Class.forName(libboxClassName, false, classLoader) }
-            .getOrElse { return LibboxRuntimeInspection(false, null, emptyList(), false, false, false, null, "${it::class.java.simpleName}: ${sanitize(it.message)}") }
+            .getOrElse { return LibboxRuntimeInspection(false, null, emptyList(), false, false, false, false, false, false, null, "${it::class.java.simpleName}: ${sanitize(it.message)}") }
         val version = runCatching { libboxClass.noArgMethod("version")?.invokeStaticOrThrow()?.toString() }.getOrNull()
-        val diagnostics = publicMethodDiagnostics(classLoader, libboxClass, commandServerClassName)
+        val diagnostics = publicMethodDiagnostics(classLoader, libboxClass, boxServiceClassName, commandServerClassName, platformInterfaceClassName)
         val boxServiceClass = runCatching { Class.forName(boxServiceClassName, false, classLoader) }.getOrNull()
         val commandServerClass = runCatching { Class.forName(commandServerClassName, false, classLoader) }.getOrNull()
-        val commandDiagnosticSupported = commandServerDiagnosticSupported(
+        val commandCapabilities = commandServerRuntimeCapabilities(
             classLoader,
             libboxClass,
             commandServerClass,
             commandServerHandlerClassName,
-            overrideOptionsClassName
+            overrideOptionsClassName,
+            platformInterfaceClassName
         )
-        val directServiceSupported = boxServiceRuntimeSupported(classLoader, libboxClass, boxServiceClass)
+        val directServiceSupported = boxServiceRuntimeSupported(classLoader, libboxClass, boxServiceClass, platformInterfaceClassName)
+        val commandRuntimeSupported = commandCapabilities.runtimeSupported
         val unsupportedReason = when {
-            directServiceSupported -> null
-            commandDiagnosticSupported -> COMMAND_SERVER_ONLY_MESSAGE
+            directServiceSupported || commandRuntimeSupported -> null
+            commandServerClass != null -> COMMAND_SERVER_ONLY_MESSAGE
             else -> UNSUPPORTED_CORE_MESSAGE
         }
         return LibboxRuntimeInspection(
@@ -51,8 +55,15 @@ internal object LibboxRuntimeSupport {
             publicMethods = diagnostics,
             boxServicePresent = boxServiceClass != null,
             commandServerPresent = commandServerClass != null,
-            runtimeSupported = directServiceSupported,
-            backendName = if (directServiceSupported) BOX_SERVICE_BACKEND else null,
+            runtimeSupported = directServiceSupported || commandRuntimeSupported,
+            commandServerStartOrReloadPresent = commandCapabilities.startOrReloadPresent,
+            platformOpenTunPresent = commandCapabilities.platformOpenTunPresent,
+            commandServerClosePresent = commandCapabilities.closePresent,
+            backendName = when {
+                directServiceSupported -> BOX_SERVICE_BACKEND
+                commandRuntimeSupported -> COMMAND_SERVER_BACKEND
+                else -> null
+            },
             unsupportedReason = unsupportedReason
         )
     }
@@ -61,10 +72,14 @@ internal object LibboxRuntimeSupport {
         logger(
             "LibboxRuntimeSupport inspection result version=${sanitize(inspection.version ?: "unavailable")} " +
                 "backend=${inspection.backendName ?: "unsupported"} runtime_supported=${inspection.runtimeSupported} " +
-                "box_service_present=${inspection.boxServicePresent} command_server_present=${inspection.commandServerPresent}"
+                "box_service_present=${inspection.boxServicePresent} command_server_present=${inspection.commandServerPresent} " +
+                "command_server_start_or_reload_present=${inspection.commandServerStartOrReloadPresent} " +
+                "platform_open_tun_present=${inspection.platformOpenTunPresent}"
         )
         if (!inspection.runtimeSupported) {
-            logger("Libbox runtime API missing: ${inspection.unsupportedReason ?: UNSUPPORTED_CORE_MESSAGE} box_service_present=${inspection.boxServicePresent} command_server_present=${inspection.commandServerPresent}")
+            logger("Libbox runtime API missing: ${inspection.unsupportedReason ?: UNSUPPORTED_CORE_MESSAGE} box_service_present=${inspection.boxServicePresent} " +
+                "command_server_present=${inspection.commandServerPresent} command_server_start_or_reload_present=${inspection.commandServerStartOrReloadPresent} " +
+                "platform_open_tun_present=${inspection.platformOpenTunPresent}")
         }
         inspection.publicMethods.forEach { logger("Libbox public method diagnostic: $it") }
     }
@@ -78,7 +93,8 @@ internal object LibboxRuntimeSupport {
         commandServerClassName: String = COMMAND_SERVER_CLASS_NAME,
         commandServerHandlerClassName: String = COMMAND_SERVER_HANDLER_CLASS_NAME,
         overrideOptionsClassName: String = OVERRIDE_OPTIONS_CLASS_NAME,
-        boxServiceClassName: String = BOX_SERVICE_CLASS_NAME
+        boxServiceClassName: String = BOX_SERVICE_CLASS_NAME,
+        platformInterfaceClassName: String = PLATFORM_INTERFACE_CLASS_NAME
     ): SingBoxRuntimeHandle {
         val inspection = inspect(
             classLoader = classLoader,
@@ -86,13 +102,15 @@ internal object LibboxRuntimeSupport {
             boxServiceClassName = boxServiceClassName,
             commandServerClassName = commandServerClassName,
             commandServerHandlerClassName = commandServerHandlerClassName,
-            overrideOptionsClassName = overrideOptionsClassName
+            overrideOptionsClassName = overrideOptionsClassName,
+            platformInterfaceClassName = platformInterfaceClassName
         )
         logInspection(inspection, logger)
         if (!inspection.runtimeSupported) throw IllegalStateException(inspection.unsupportedReason ?: UNSUPPORTED_CORE_MESSAGE)
         logger("runtime backend selected=${inspection.backendName}")
         return when (inspection.backendName) {
-            BOX_SERVICE_BACKEND -> BoxServiceRuntimeHandle(config, platform, classLoader, logger, libboxClassName, boxServiceClassName)
+            BOX_SERVICE_BACKEND -> BoxServiceRuntimeHandle(config, platform, classLoader, logger, libboxClassName, boxServiceClassName, platformInterfaceClassName)
+            COMMAND_SERVER_BACKEND -> CommandServerRuntimeHandle(config, platform, classLoader, logger, libboxClassName, commandServerClassName, commandServerHandlerClassName, overrideOptionsClassName, platformInterfaceClassName)
             else -> throw IllegalStateException(UNSUPPORTED_CORE_MESSAGE)
         }
     }
@@ -101,14 +119,14 @@ internal object LibboxRuntimeSupport {
         ?.replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}"), "<redacted>")
         ?.replace(Regex("(?i)(uuid|public_?key|short_?id|sid|token|private_?key|host|server_name|server)[=:/][^\\s,;)]*"), "\$1=<redacted>")
         ?.replace(Regex("vless://[^\\s,;)]*", RegexOption.IGNORE_CASE), "vless://<redacted>")
-        ?.replace(Regex("[A-Za-z0-9_-]{20,}"), "<redacted>")
+        ?.replace(Regex("[A-Za-z0-9_-]{32,}"), "<redacted>")
         ?.take(160)
         ?: ""
 
-    private fun boxServiceRuntimeSupported(classLoader: ClassLoader?, libboxClass: Class<*>, boxServiceClass: Class<*>?): Boolean = runCatching {
+    private fun boxServiceRuntimeSupported(classLoader: ClassLoader?, libboxClass: Class<*>, boxServiceClass: Class<*>?, platformInterfaceClassName: String): Boolean = runCatching {
         val boxService = boxServiceClass ?: return@runCatching false
-        val platform = Class.forName(PLATFORM_INTERFACE_CLASS_NAME, false, classLoader)
-        check(platform.methods.any { it.name == "openTun" && it.parameterCount == 1 && it.returnType.isTunFdReturnType() })
+        val platform = Class.forName(platformInterfaceClassName, false, classLoader)
+        check(platform.methods.any { it.isOpenTunMethod() })
         val factory = findNewServiceFactory(libboxClass, boxService, platform)
         val constructor = boxService.constructors.firstOrNull { ctor -> ctor.parameterTypes.toList() == listOf(String::class.java, platform) }
         check(factory != null || constructor != null)
@@ -117,24 +135,33 @@ internal object LibboxRuntimeSupport {
         true
     }.getOrDefault(false)
 
-    private fun commandServerDiagnosticSupported(
+    private fun commandServerRuntimeCapabilities(
         classLoader: ClassLoader?,
         libboxClass: Class<*>,
         commandServerClass: Class<*>?,
         handlerClassName: String,
-        overrideOptionsClassName: String
-    ): Boolean = runCatching {
-        val commandServer = commandServerClass ?: return@runCatching false
+        overrideOptionsClassName: String,
+        platformInterfaceClassName: String
+    ): CommandServerRuntimeCapabilities = runCatching {
+        val commandServer = commandServerClass ?: return@runCatching CommandServerRuntimeCapabilities()
         val handler = Class.forName(handlerClassName, false, classLoader)
-        val platform = Class.forName(PLATFORM_INTERFACE_CLASS_NAME, false, classLoader)
+        val platform = Class.forName(platformInterfaceClassName, false, classLoader)
         val overrideOptions = Class.forName(overrideOptionsClassName, false, classLoader)
         val factory = findNewCommandServerFactory(libboxClass, commandServer, handler, platform)
         val constructor = commandServer.constructors.firstOrNull { ctor -> ctor.parameterTypes.toList() == listOf(handler, platform) }
-        check(factory != null || constructor != null)
-        commandServer.getMethod("start")
-        commandServer.getMethod("startOrReloadService", String::class.java, overrideOptions)
-        true
-    }.getOrDefault(false)
+        val factoryPresent = factory != null || constructor != null
+        val startPresent = runCatching { commandServer.getMethod("start") }.isSuccess
+        val startOrReloadPresent = runCatching { commandServer.getMethod("startOrReloadService", String::class.java, overrideOptions) }.isSuccess
+        val closeServicePresent = runCatching { commandServer.getMethod("closeService") }.isSuccess
+        val closePresent = runCatching { commandServer.getMethod("close") }.isSuccess
+        val openTunPresent = platform.methods.any { it.isOpenTunMethod() }
+        CommandServerRuntimeCapabilities(
+            runtimeSupported = factoryPresent && startPresent && startOrReloadPresent && (closeServicePresent || closePresent) && openTunPresent,
+            startOrReloadPresent = startOrReloadPresent,
+            platformOpenTunPresent = openTunPresent,
+            closePresent = closeServicePresent || closePresent
+        )
+    }.getOrDefault(CommandServerRuntimeCapabilities())
 
     private fun findNewServiceFactory(libboxClass: Class<*>, boxService: Class<*>, platform: Class<*>): Method? =
         libboxClass.methods.firstOrNull { method ->
@@ -152,11 +179,18 @@ internal object LibboxRuntimeSupport {
                 commandServer.isAssignableFrom(method.returnType)
         }
 
-    private fun publicMethodDiagnostics(classLoader: ClassLoader?, libboxClass: Class<*>, commandServerClassName: String): List<LibboxMethodDiagnostic> {
+    private fun publicMethodDiagnostics(
+        classLoader: ClassLoader?,
+        libboxClass: Class<*>,
+        boxServiceClassName: String,
+        commandServerClassName: String,
+        platformInterfaceClassName: String
+    ): List<LibboxMethodDiagnostic> {
         val classes = listOfNotNull(
             libboxClass,
+            runCatching { Class.forName(boxServiceClassName, false, classLoader) }.getOrNull(),
             runCatching { Class.forName(commandServerClassName, false, classLoader) }.getOrNull(),
-            runCatching { Class.forName(PLATFORM_INTERFACE_CLASS_NAME, false, classLoader) }.getOrNull()
+            runCatching { Class.forName(platformInterfaceClassName, false, classLoader) }.getOrNull()
         ).distinctBy { it.name }
         return classes.flatMap { clazz -> publicMethods(clazz) }
             .sortedWith(compareBy<LibboxMethodDiagnostic> { it.className }.thenBy { it.name }.thenBy { it.parameterTypeNames.joinToString(",") })
@@ -181,7 +215,8 @@ internal object LibboxRuntimeSupport {
         private val classLoader: ClassLoader?,
         private val logger: (String) -> Unit,
         private val libboxClassName: String,
-        private val boxServiceClassName: String
+        private val boxServiceClassName: String,
+        private val platformInterfaceClassName: String
     ) : SingBoxRuntimeHandle {
         private var service: Any? = null
 
@@ -189,7 +224,7 @@ internal object LibboxRuntimeSupport {
             val libboxClass = Class.forName(libboxClassName, true, classLoader)
             val boxServiceClass = Class.forName(boxServiceClassName, true, classLoader)
             val platformInterface = platformInterface()
-            check(platformInterface.methods.any { it.name == "openTun" && it.parameterCount == 1 && it.returnType.isTunFdReturnType() }) {
+            check(platformInterface.methods.any { it.isOpenTunMethod() }) {
                 UNSUPPORTED_CORE_MESSAGE
             }
             val factory = findNewServiceFactory(libboxClass, boxServiceClass, platformInterface)
@@ -213,13 +248,103 @@ internal object LibboxRuntimeSupport {
             created.javaClass.getMethod("close").invokeOrThrow(created)
         }
 
-        private fun platformInterface(): Class<*> = platform.javaClass.interfaces.firstOrNull { it.name == PLATFORM_INTERFACE_CLASS_NAME }
-            ?: Class.forName(PLATFORM_INTERFACE_CLASS_NAME, false, classLoader)
+        private fun platformInterface(): Class<*> = platform.javaClass.interfaces.firstOrNull { it.name == platformInterfaceClassName }
+            ?: Class.forName(platformInterfaceClassName, false, classLoader)
     }
+
+
+    private class CommandServerRuntimeHandle(
+        private val config: String,
+        private val platform: Any,
+        private val classLoader: ClassLoader?,
+        private val logger: (String) -> Unit,
+        private val libboxClassName: String,
+        private val commandServerClassName: String,
+        private val commandServerHandlerClassName: String,
+        private val overrideOptionsClassName: String,
+        private val platformInterfaceClassName: String
+    ) : SingBoxRuntimeHandle {
+        private var commandServer: Any? = null
+
+        override fun start() {
+            val libboxClass = Class.forName(libboxClassName, true, classLoader)
+            val commandServerClass = Class.forName(commandServerClassName, true, classLoader)
+            val handlerInterface = Class.forName(commandServerHandlerClassName, true, classLoader)
+            val overrideOptionsClass = Class.forName(overrideOptionsClassName, true, classLoader)
+            val platformInterface = platformInterface()
+            check(platformInterface.methods.any { it.isOpenTunMethod() }) {
+                UNSUPPORTED_CORE_MESSAGE
+            }
+            val handler = commandServerHandler(handlerInterface)
+            val factory = findNewCommandServerFactory(libboxClass, commandServerClass, handlerInterface, platformInterface)
+            val created = if (factory != null) {
+                logger("CommandServer/runtime object created via Libbox.${factory.name}")
+                factory.invokeStaticOrThrow(handler, platform) ?: error("Libbox.newCommandServer returned null")
+            } else {
+                logger("CommandServer/runtime object created via constructor")
+                commandServerClass.getConstructor(handlerInterface, platformInterface).newInstance(handler, platform)
+            }
+            commandServer = created
+            logger("commandServer start called")
+            created.javaClass.getMethod("start").invokeOrThrow(created)
+            logger("commandServer start success")
+            val overrideOptions = overrideOptionsClass.getDeclaredConstructor().newInstance()
+            logger("startOrReloadService called")
+            try {
+                created.javaClass.getMethod("startOrReloadService", String::class.java, overrideOptionsClass)
+                    .invokeOrThrow(created, config, overrideOptions)
+                logger("startOrReloadService success")
+            } catch (t: Throwable) {
+                logger("startOrReloadService failure ${sanitize(t.message)}")
+                throw t
+            }
+        }
+
+        override fun close() {
+            val created = commandServer ?: return
+            commandServer = null
+            created.javaClass.methods.firstOrNull { it.name == "closeService" && it.parameterCount == 0 }?.let { method ->
+                runCatching { method.invokeOrThrow(created) }
+                    .onFailure { logger("closeService failure ${sanitize(it.message)}") }
+            }
+            created.javaClass.methods.firstOrNull { it.name == "close" && it.parameterCount == 0 }?.let { method ->
+                runCatching { method.invokeOrThrow(created) }
+                    .onFailure { logger("commandServer close failure ${sanitize(it.message)}") }
+            }
+        }
+
+        private fun commandServerHandler(handlerInterface: Class<*>): Any = java.lang.reflect.Proxy.newProxyInstance(
+            handlerInterface.classLoader,
+            arrayOf(handlerInterface)
+        ) { proxy, method, args ->
+            when (method.name) {
+                "serviceStop", "serviceReload" -> Unit
+                "getSystemProxyStatus" -> null
+                "setSystemProxyEnabled" -> Unit
+                "writeDebugMessage" -> Unit
+                "equals" -> proxy === args?.get(0)
+                "hashCode" -> System.identityHashCode(proxy)
+                "toString" -> "ZoootCommandServerHandlerProxy"
+                else -> defaultValue(method.returnType)
+            }
+        }
+
+        private fun platformInterface(): Class<*> = platform.javaClass.interfaces.firstOrNull { it.name == platformInterfaceClassName }
+            ?: Class.forName(platformInterfaceClassName, false, classLoader)
+    }
+
+    private data class CommandServerRuntimeCapabilities(
+        val runtimeSupported: Boolean = false,
+        val startOrReloadPresent: Boolean = false,
+        val platformOpenTunPresent: Boolean = false,
+        val closePresent: Boolean = false
+    )
 
     private fun Class<*>.noArgMethod(name: String): Method? = methods.firstOrNull { it.name.equals(name, ignoreCase = true) && it.parameterCount == 0 }
     private fun Class<*>.isTunFdReturnType(): Boolean = this == Integer.TYPE || this == java.lang.Long.TYPE
+    private fun Method.isOpenTunMethod(): Boolean = name == "openTun" && parameterTypes.singleOrNull()?.name == TUN_OPTIONS_CLASS_NAME && returnType.isTunFdReturnType()
     private fun Method.invokeStaticOrThrow(vararg args: Any?): Any? = invokeOrThrow(null, *args)
+    private fun defaultValue(type: Class<*>): Any? = when (type) { java.lang.Boolean.TYPE -> false; java.lang.Integer.TYPE -> 0; java.lang.Long.TYPE -> 0L; java.lang.Void.TYPE -> Unit; else -> null }
     private fun Method.invokeOrThrow(target: Any?, vararg args: Any?): Any? = try {
         invoke(target, *args)
     } catch (e: InvocationTargetException) {
@@ -239,6 +364,9 @@ internal data class LibboxRuntimeInspection(
     val boxServicePresent: Boolean,
     val commandServerPresent: Boolean,
     val runtimeSupported: Boolean,
+    val commandServerStartOrReloadPresent: Boolean,
+    val platformOpenTunPresent: Boolean,
+    val commandServerClosePresent: Boolean,
     val backendName: String?,
     val unsupportedReason: String?
 )

@@ -147,6 +147,7 @@ class ZootVpnService : VpnService() {
             "usePlatformAutoDetectInterfaceControl" -> true
             "autoDetectInterfaceControl" -> service.protect((args?.get(0) as Number).toInt()).let { Unit }
             "openTun" -> runCatching {
+                safeLogDebug("openTun called")
                 val fd = service.openTun(args?.get(0) ?: error("missing tun options"))
                 if (method.returnType == java.lang.Long.TYPE) fd.toLong() else fd
             }.getOrElse {
@@ -180,18 +181,24 @@ class ZootVpnService : VpnService() {
 
         private fun ZootVpnService.openTun(options: Any): Int {
             safeLogDebug("createTun begin")
-            val builder = Builder().setSession("Zooot Reality").setMtu(callInt(options, "getMTU", 9000))
-            addAddresses(builder, options, "getInet4Address", ipv6 = false)
-            addAddresses(builder, options, "getInet6Address", ipv6 = true)
+            val mtu = callInt(options, "getMTU", 0)
+            val builder = Builder().setSession("Zooot VPN")
+            if (mtu > 0) builder.setMtu(mtu)
+            var addressCount = 0
+            var routeCount = 0
+            addressCount += addAddresses(builder, options, "getInet4Address", ipv6 = false)
+            addressCount += addAddresses(builder, options, "getInet6Address", ipv6 = true)
             if (callBoolean(options, "getAutoRoute", true)) {
-                addRoutes(builder, options, "getInet4RouteRange", ipv6 = false)
-                addRoutes(builder, options, "getInet6RouteRange", ipv6 = true)
-            } else {
-                addRoutes(builder, options, "getInet4RouteAddress", ipv6 = false)
-                addRoutes(builder, options, "getInet6RouteAddress", ipv6 = true)
+                routeCount += addRoutes(builder, options, "getInet4RouteRange", ipv6 = false)
+                routeCount += addRoutes(builder, options, "getInet6RouteRange", ipv6 = true)
             }
-            callStringBox(options, "getDNSServerAddress")?.let { builder.addDnsServer(it) }
-            builder.addDisallowedApplication(packageName)
+            routeCount += addRoutes(builder, options, "getInet4RouteAddress", ipv6 = false)
+            routeCount += addRoutes(builder, options, "getInet6RouteAddress", ipv6 = true)
+            if (addressCount == 0) builder.addAddress("172.19.0.1", 30)
+            if (routeCount == 0) builder.addRoute("0.0.0.0", 0)
+            forEachString(call(options, "getDNSServerAddress")) { builder.addDnsServer(it) }
+            applyPackageRules(builder, options)
+            runCatching { builder.addDisallowedApplication(packageName) }
             val pfd = builder.establish() ?: error("VpnService.Builder.establish() returned null")
             safeLogDebug("tun fd created fd=${pfd.fd}")
             tunFd?.close()
@@ -200,25 +207,51 @@ class ZootVpnService : VpnService() {
             return pfd.fd
         }
 
-        private fun addAddresses(builder: Builder, options: Any, method: String, ipv6: Boolean) {
+        private fun addAddresses(builder: Builder, options: Any, method: String, ipv6: Boolean): Int {
+            var count = 0
             forEachRoutePrefix(call(options, method)) { address, prefix ->
-                if (address.contains(":") == ipv6) builder.addAddress(address, prefix)
+                if (address.contains(":") == ipv6) { builder.addAddress(address, prefix); count++ }
             }
+            return count
         }
 
-        private fun addRoutes(builder: Builder, options: Any, method: String, ipv6: Boolean) {
+        private fun addRoutes(builder: Builder, options: Any, method: String, ipv6: Boolean): Int {
+            var count = 0
             forEachRoutePrefix(call(options, method)) { address, prefix ->
-                if (address.contains(":") == ipv6) builder.addRoute(address, prefix)
+                if (address.contains(":") == ipv6) { builder.addRoute(address, prefix); count++ }
             }
+            return count
         }
 
         private fun forEachRoutePrefix(iterator: Any?, block: (String, Int) -> Unit) {
             if (iterator == null) return
+            if (iterator is String) { parseRoutePrefix(iterator)?.let { (address, bits) -> block(address, bits) }; return }
             while (callBoolean(iterator, "hasNext", false)) {
                 val prefix = call(iterator, "next") ?: break
+                if (prefix is String) { parseRoutePrefix(prefix)?.let { (address, bits) -> block(address, bits) }; continue }
                 val address = call(prefix, "address") as? String ?: continue
                 val bits = callInt(prefix, "prefix", -1)
                 if (bits >= 0) block(address, bits)
+            }
+        }
+
+        private fun parseRoutePrefix(value: String): Pair<String, Int>? {
+            val address = value.substringBefore("/").ifBlank { return null }
+            val bits = value.substringAfter("/", "").toIntOrNull() ?: if (address.contains(":")) 128 else 32
+            return address to bits
+        }
+
+        private fun applyPackageRules(builder: Builder, options: Any) {
+            forEachString(call(options, "getIncludePackage")) { pkg -> runCatching { builder.addAllowedApplication(pkg) } }
+            forEachString(call(options, "getExcludePackage")) { pkg -> runCatching { builder.addDisallowedApplication(pkg) } }
+        }
+
+        private fun forEachString(value: Any?, block: (String) -> Unit) {
+            if (value == null) return
+            if (value is String) { if (value.isNotBlank()) block(value); return }
+            while (callBoolean(value, "hasNext", false)) {
+                val item = call(value, "next")?.toString().orEmpty()
+                if (item.isNotBlank()) block(item)
             }
         }
 
@@ -313,7 +346,7 @@ class ZootVpnService : VpnService() {
             "${address.hostAddress}/$networkPrefixLength"
         }
 
-        private fun call(target: Any, method: String): Any? = target.javaClass.methods.first { it.name == method && it.parameterCount == 0 }.invoke(target)
+        private fun call(target: Any, method: String): Any? = runCatching { target.javaClass.methods.first { it.name == method && it.parameterCount == 0 }.invoke(target) }.getOrNull()
         private fun callInt(target: Any, method: String, fallback: Int): Int = runCatching { (call(target, method) as Number).toInt() }.getOrDefault(fallback)
         private fun callBoolean(target: Any, method: String, fallback: Boolean): Boolean = runCatching { call(target, method) as Boolean }.getOrDefault(fallback)
         private fun set(target: Any, name: String, value: Any?) = runCatching { target.javaClass.getField(name).set(target, value) }

@@ -4,9 +4,27 @@ object RuntimeCapableLibbox {
     @JvmStatic fun version(): String = "1.13.12-test"
 }
 
+object CommandRuntimeState {
+    var throwOnStartOrReload: RuntimeException? = null
+    var closeServiceCalls = 0
+    var closeCalls = 0
+    var startOrReloadCalls = 0
+    fun reset() {
+        throwOnStartOrReload = null
+        closeServiceCalls = 0
+        closeCalls = 0
+        startOrReloadCalls = 0
+    }
+}
+
 object CommandServerOnlyLibbox {
-    @JvmStatic fun version(): String = "1.13.12-command-only-test"
+    @JvmStatic fun version(): String = "1.13.12-command-runtime-test"
     @JvmStatic fun newCommandServer(handler: CommandServerHandler, platform: PlatformInterface): CommandServer = CommandServer(handler, platform)
+}
+
+object CommandServerWithoutReloadLibbox {
+    @JvmStatic fun version(): String = "1.13.12-command-no-reload-test"
+    @JvmStatic fun newCommandServer(handler: CommandServerHandler, platform: PlatformInterface): CommandServerWithoutReload = CommandServerWithoutReload(handler, platform)
 }
 
 object Libbox {
@@ -48,9 +66,17 @@ class CommandServer(private val handler: CommandServerHandler, private val platf
     fun startOrReloadService(config: String, options: OverrideOptions) {
         check(started) { "command server was not started" }
         check(config.contains("tun-in")) { "config missing tun inbound" }
+        CommandRuntimeState.startOrReloadCalls++
+        CommandRuntimeState.throwOnStartOrReload?.let { throw it }
+        platform.openTun(TunOptions())
         serviceStarted = true
     }
     fun needWIFIState(): Boolean = false
-    fun closeService() { serviceStarted = false }
-    fun close() { started = false }
+    fun closeService() { CommandRuntimeState.closeServiceCalls++; serviceStarted = false }
+    fun close() { CommandRuntimeState.closeCalls++; started = false }
+}
+
+class CommandServerWithoutReload(private val handler: CommandServerHandler, private val platform: PlatformInterface) {
+    fun start() = Unit
+    fun close() = Unit
 }
