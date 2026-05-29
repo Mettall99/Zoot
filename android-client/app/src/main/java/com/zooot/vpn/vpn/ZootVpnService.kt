@@ -39,24 +39,25 @@ class ZootVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         safeLogDebug("onStartCommand action=${intent?.action.orEmpty()} extras_present=${intent?.extras != null}")
         when (intent?.action) {
-            ACTION_START_REALITY -> startRealityService(intent.getStringExtra(EXTRA_CONFIG).orEmpty())
-            ACTION_STOP_REALITY -> stopRealityService()
+            ACTION_START_REALITY -> startSingBoxService(intent.getStringExtra(EXTRA_CONFIG).orEmpty(), "xray_vless_reality")
+            ACTION_START_SHADOWSOCKS -> startSingBoxService(intent.getStringExtra(EXTRA_CONFIG).orEmpty(), "outline_shadowsocks")
+            ACTION_STOP_REALITY, ACTION_STOP_SHADOWSOCKS -> stopSingBoxService()
         }
         return Service.START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        stopRealityService()
+        stopSingBoxService()
         super.onDestroy()
     }
 
     override fun onRevoke() {
-        stopRealityService()
+        stopSingBoxService()
         super.onRevoke()
     }
 
-    private fun startRealityService(config: String) {
-        safeLogDebug("startReality config_present=${config.isNotBlank()}")
+    private fun startSingBoxService(config: String, protocol: String) {
+        safeLogDebug("startSingBox protocol=$protocol config_present=${config.isNotBlank()}")
         startLatch.set(CountDownLatch(1))
         stopLatch.set(CountDownLatch(1))
         lastError.set(null)
@@ -83,7 +84,7 @@ class ZootVpnService : VpnService() {
             startRuntimeSafely(
                 runtimeFactory = {
                     val platform = LibboxPlatformProxy(this)
-                    safeLogDebug("core start begin")
+                    safeLogDebug("core start begin protocol=$protocol")
                     LibboxRuntimeSupport.start(config, platform.proxy, logger = { message -> safeLogDebug(message) }).also { runtimeHandle = it }
                 },
                 onFailureCleanup = {
@@ -93,11 +94,11 @@ class ZootVpnService : VpnService() {
                     tunFd = null
                 }
             )
-        }, "zooot-sing-box-reality")
+        }, "zooot-sing-box-$protocol")
         worker?.start()
     }
 
-    private fun stopRealityService() {
+    private fun stopSingBoxService() {
         safeLogDebug("stop begin")
         val runtime = runtimeHandle
         runtimeHandle = null
@@ -123,13 +124,13 @@ class ZootVpnService : VpnService() {
     private fun showForeground() {
         safeLogDebug("showForeground start")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Zooot Reality VPN", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, "Zooot VPN", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Zooot VPN")
-            .setContentText("Reality/TCP tunnel running")
+            .setContentText("Zooot VPN tunnel running")
             .setOngoing(true)
             .build()
         startForeground(NOTIFICATION_ID, notification)
@@ -357,8 +358,10 @@ class ZootVpnService : VpnService() {
     companion object {
         private const val ACTION_START_REALITY = "com.zooot.vpn.action.START_REALITY"
         private const val ACTION_STOP_REALITY = "com.zooot.vpn.action.STOP_REALITY"
+        private const val ACTION_START_SHADOWSOCKS = "com.zooot.vpn.action.START_SHADOWSOCKS"
+        private const val ACTION_STOP_SHADOWSOCKS = "com.zooot.vpn.action.STOP_SHADOWSOCKS"
         private const val EXTRA_CONFIG = "sing_box_config"
-        private const val CHANNEL_ID = "reality_vpn"
+        private const val CHANNEL_ID = "zooot_vpn"
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "ZootVpnService"
         private val running = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -373,6 +376,15 @@ class ZootVpnService : VpnService() {
 
         fun stopReality(context: Context) {
             context.startService(Intent(context, ZootVpnService::class.java).setAction(ACTION_STOP_REALITY))
+        }
+
+        fun startShadowsocks(context: Context, config: String) {
+            val intent = Intent(context, ZootVpnService::class.java).setAction(ACTION_START_SHADOWSOCKS).putExtra(EXTRA_CONFIG, config)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+        }
+
+        fun stopShadowsocks(context: Context) {
+            context.startService(Intent(context, ZootVpnService::class.java).setAction(ACTION_STOP_SHADOWSOCKS))
         }
 
         private fun safeLogDebug(message: String) { runCatching { Log.d(TAG, LibboxRuntimeSupport.sanitize(message)) } }
@@ -457,6 +469,10 @@ class ZootVpnService : VpnService() {
         fun awaitRealityStopped(timeoutMs: Long): Boolean = stopLatch.get().await(timeoutMs, TimeUnit.MILLISECONDS) && !running.get()
         fun isRealityRunning(): Boolean = running.get()
         fun lastRealityError(): String? = lastError.get()
+        fun awaitShadowsocksRunning(timeoutMs: Long): Boolean = awaitRealityRunning(timeoutMs)
+        fun awaitShadowsocksStopped(timeoutMs: Long): Boolean = awaitRealityStopped(timeoutMs)
+        fun isShadowsocksRunning(): Boolean = isRealityRunning()
+        fun lastShadowsocksError(): String? = lastRealityError()
     }
 
     private object ProcessUid { const val INVALID = -1 }
