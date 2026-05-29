@@ -6,7 +6,7 @@
     "dev": "tsx src/main.ts",
     "test": "vitest run",
     "build": "tsc --noEmit",
-    "db:migrate": "psql \"\" -f migrations/001_init.sql -f migrations/002_backend_flow.sql -f migrations/003_auth_password_hash.sql -f migrations/004_wireguard_devices.sql",
+    "db:migrate": "psql \"\" -f migrations/001_init.sql -f migrations/002_backend_flow.sql -f migrations/003_auth_password_hash.sql -f migrations/004_wireguard_devices.sql -f migrations/005_vpn_config_tokens.sql",
     "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
