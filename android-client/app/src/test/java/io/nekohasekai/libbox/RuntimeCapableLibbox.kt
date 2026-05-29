@@ -6,6 +6,8 @@ object RuntimeCapableLibbox {
 
 object Libbox {
     @JvmStatic fun version(): String = "1.13.12-test"
+    @JvmStatic fun newService(config: String, platform: PlatformInterface): BoxService = BoxService(config, platform)
+    @JvmStatic fun newCommandServer(handler: CommandServerHandler, platform: PlatformInterface): CommandServer = CommandServer(handler, platform)
 }
 
 interface PlatformInterface
@@ -18,6 +20,16 @@ interface CommandServerHandler {
 }
 
 class OverrideOptions
+
+class BoxService(private val config: String, private val platform: PlatformInterface) {
+    var started = false
+    fun start() {
+        check(config.contains("tun-in")) { "config missing tun inbound" }
+        started = true
+    }
+    fun needWIFIState(): Boolean = false
+    fun close() { started = false }
+}
 
 class CommandServer(private val handler: CommandServerHandler, private val platform: PlatformInterface) {
     var started = false

@@ -31,8 +31,13 @@ class ZootVpnService : VpnService() {
     private var runtimeHandle: SingBoxRuntimeHandle? = null
     private var worker: Thread? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        safeLogDebug("onCreate")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        safeLogDebug("onStartCommand action=${intent?.action.orEmpty()}")
+        safeLogDebug("onStartCommand action=${intent?.action.orEmpty()} extras_present=${intent?.extras != null}")
         when (intent?.action) {
             ACTION_START_REALITY -> startRealityService(intent.getStringExtra(EXTRA_CONFIG).orEmpty())
             ACTION_STOP_REALITY -> stopRealityService()
@@ -51,36 +56,43 @@ class ZootVpnService : VpnService() {
     }
 
     private fun startRealityService(config: String) {
-        safeLogDebug("startReality")
+        safeLogDebug("startReality config_present=${config.isNotBlank()}")
+        startLatch.set(CountDownLatch(1))
+        stopLatch.set(CountDownLatch(1))
+        lastError.set(null)
         if (config.isBlank()) {
             setStopped("empty sing-box config")
             stopSelf()
             return
         }
-        showForeground()
-        if (running.get()) return
-        startLatch.set(CountDownLatch(1))
-        stopLatch.set(CountDownLatch(1))
-        lastError.set(null)
+        if (running.get()) {
+            safeLogDebug("running=true already_started=true")
+            startLatch.get().countDown()
+            return
+        }
+        try {
+            showForeground()
+        } catch (e: Throwable) {
+            val message = "showForeground failed: ${realityErrorMessage(e)}"
+            safeLogDebug(message)
+            setStopped(message)
+            stopSelf()
+            return
+        }
         worker = Thread({
-            try {
-                val platform = LibboxPlatformProxy(this)
-                safeLogDebug("core start begin")
-                val runtime = LibboxRuntimeSupport.start(config, platform.proxy, logger = { message -> safeLogDebug(message) })
-                runtimeHandle = runtime
-                runtime.start()
-                running.set(true)
-                safeLogDebug("core start success")
-                startLatch.get().countDown()
-            } catch (e: Throwable) {
-                val message = realityErrorMessage(e)
-                safeLogDebug("core start failure $message")
-                runCatching { runtimeHandle?.close() }
-                runtimeHandle = null
-                runCatching { tunFd?.close() }
-                tunFd = null
-                setStopped(message)
-            }
+            startRuntimeSafely(
+                runtimeFactory = {
+                    val platform = LibboxPlatformProxy(this)
+                    safeLogDebug("core start begin")
+                    LibboxRuntimeSupport.start(config, platform.proxy, logger = { message -> safeLogDebug(message) }).also { runtimeHandle = it }
+                },
+                onFailureCleanup = {
+                    runCatching { runtimeHandle?.close() }
+                    runtimeHandle = null
+                    runCatching { tunFd?.close() }
+                    tunFd = null
+                }
+            )
         }, "zooot-sing-box-reality")
         worker?.start()
     }
@@ -106,15 +118,10 @@ class ZootVpnService : VpnService() {
         stopSelf()
     }
 
-    private fun setStopped(message: String?) {
-        lastError.set(message)
-        running.set(false)
-        startLatch.get().countDown()
-        stopLatch.get().countDown()
-    }
+    private fun setStopped(message: String?) = setStoppedState(message)
 
     private fun showForeground() {
-        safeLogDebug("showForeground")
+        safeLogDebug("showForeground start")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "Zooot Reality VPN", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -126,6 +133,7 @@ class ZootVpnService : VpnService() {
             .setOngoing(true)
             .build()
         startForeground(NOTIFICATION_ID, notification)
+        safeLogDebug("showForeground success")
     }
 
     private class LibboxPlatformProxy(private val service: ZootVpnService) : InvocationHandler {
@@ -183,6 +191,7 @@ class ZootVpnService : VpnService() {
             callStringBox(options, "getDNSServerAddress")?.let { builder.addDnsServer(it) }
             builder.addDisallowedApplication(packageName)
             val pfd = builder.establish() ?: error("VpnService.Builder.establish returned null")
+            safeLogDebug("tun fd created fd=${pfd.fd}")
             tunFd?.close()
             tunFd = pfd
             safeLogDebug("createTun success")
@@ -334,6 +343,45 @@ class ZootVpnService : VpnService() {
         private fun safeLogDebug(message: String) { runCatching { Log.d(TAG, LibboxRuntimeSupport.sanitize(message)) } }
         internal fun inspectLibboxRuntime(): LibboxRuntimeInspection = LibboxRuntimeSupport.inspect()
 
+        internal fun startRuntimeForTest(runtimeFactory: () -> SingBoxRuntimeHandle) {
+            startLatch.set(CountDownLatch(1))
+            stopLatch.set(CountDownLatch(1))
+            lastError.set(null)
+            running.set(false)
+            startRuntimeSafely(runtimeFactory, onFailureCleanup = {})
+        }
+
+        private fun setStoppedState(message: String?) {
+            lastError.set(message)
+            running.set(false)
+            safeLogDebug("running=false lastRealityError=${message ?: "none"}")
+            startLatch.get().countDown()
+            stopLatch.get().countDown()
+        }
+
+        private fun startRuntimeSafely(runtimeFactory: () -> SingBoxRuntimeHandle, onFailureCleanup: () -> Unit) {
+            try {
+                val runtime = runtimeFactory()
+                runtimeHandleForLogging(runtime)
+                safeLogDebug("runtime start called")
+                runtime.start()
+                running.set(true)
+                lastError.set(null)
+                safeLogDebug("runtime start success")
+                safeLogDebug("running=true lastRealityError=none")
+                startLatch.get().countDown()
+            } catch (e: Throwable) {
+                val message = realityErrorMessage(e)
+                safeLogDebug("runtime start exception class=${e::class.java.simpleName} message=$message")
+                onFailureCleanup()
+                setStoppedState(message)
+            }
+        }
+
+        private fun runtimeHandleForLogging(runtime: SingBoxRuntimeHandle) {
+            safeLogDebug("runtime object created type=${runtime::class.java.simpleName}")
+        }
+
         internal fun realityErrorMessage(e: Throwable): String {
             if (e is NoSuchMethodException) {
                 val sanitized = LibboxRuntimeSupport.sanitize(e.message)
@@ -343,7 +391,8 @@ class ZootVpnService : VpnService() {
             if (message.startsWith(LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE) ||
                 message.startsWith("NoSuchMethodException:") ||
                 message.startsWith("InvocationTargetException cause:") ||
-                message.startsWith("openTun failed:")
+                message.startsWith("openTun failed:") ||
+                message.startsWith("showForeground failed:")
             ) return LibboxRuntimeSupport.sanitize(message)
             val cause = e.cause
             if (cause != null && cause !== e) {
