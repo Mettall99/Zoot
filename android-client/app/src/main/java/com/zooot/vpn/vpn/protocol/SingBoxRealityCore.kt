@@ -48,7 +48,7 @@ class SingBoxRealityCore(
         const val LIBBOX_DEPENDENCY_NAME = "official sing-box Android libbox AAR (io.nekohasekai.libbox)"
         const val LIBBOX_CLASS_NAME = "io.nekohasekai.libbox.Libbox"
         const val LIBBOX_PLATFORM_INTERFACE_CLASS_NAME = "io.nekohasekai.libbox.PlatformInterface"
-        private const val START_TIMEOUT_MS = 10_000L
+        private const val START_TIMEOUT_MS = 15_000L
         private const val STOP_TIMEOUT_MS = 5_000L
 
         private fun inspect() = ZootVpnService.inspectLibboxRuntime()

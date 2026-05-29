@@ -4,6 +4,10 @@ import android.util.Log
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 internal object LibboxRuntimeSupport {
     const val UNSUPPORTED_CORE_MESSAGE = "Current bundled libbox does not expose Android VPN/TUN runtime API"
@@ -265,6 +269,9 @@ internal object LibboxRuntimeSupport {
         private val platformInterfaceClassName: String
     ) : SingBoxRuntimeHandle {
         private var commandServer: Any? = null
+        private val startThreadStopRequested = AtomicBoolean(false)
+        private val startThreadFailure = AtomicReference<Throwable?>(null)
+        private var startThread: Thread? = null
 
         override fun start() {
             val libboxClass = Class.forName(libboxClassName, true, classLoader)
@@ -285,9 +292,36 @@ internal object LibboxRuntimeSupport {
                 commandServerClass.getConstructor(handlerInterface, platformInterface).newInstance(handler, platform)
             }
             commandServer = created
-            logger("commandServer start called")
-            created.javaClass.getMethod("start").invokeOrThrow(created)
-            logger("commandServer start success")
+            val entered = CountDownLatch(1)
+            val returned = CountDownLatch(1)
+            val startMethod = created.javaClass.getMethod("start")
+            logger("commandServer start thread launching")
+            startThreadStopRequested.set(false)
+            startThreadFailure.set(null)
+            startThread = Thread({
+                try {
+                    logger("commandServer start entered")
+                    entered.countDown()
+                    startMethod.invokeOrThrow(created)
+                    logger("commandServer start returned")
+                } catch (t: Throwable) {
+                    if (!startThreadStopRequested.get()) {
+                        startThreadFailure.set(t)
+                        logger("commandServer start exception class=${t::class.java.simpleName} message=${sanitize(t.message)}")
+                    }
+                } finally {
+                    entered.countDown()
+                    returned.countDown()
+                }
+            }, "zooot-libbox-command-server")
+                .also { thread ->
+                    thread.isDaemon = true
+                    thread.start()
+                }
+            entered.await(COMMAND_SERVER_START_READY_WAIT_MS, TimeUnit.MILLISECONDS)
+            returned.await(COMMAND_SERVER_START_READY_WAIT_MS, TimeUnit.MILLISECONDS)
+            startThreadFailure.get()?.let { throw it }
+
             val overrideOptions = overrideOptionsClass.getDeclaredConstructor().newInstance()
             logger("startOrReloadService called")
             try {
@@ -295,12 +329,13 @@ internal object LibboxRuntimeSupport {
                     .invokeOrThrow(created, config, overrideOptions)
                 logger("startOrReloadService success")
             } catch (t: Throwable) {
-                logger("startOrReloadService failure ${sanitize(t.message)}")
+                logger("startOrReloadService exception class=${t::class.java.simpleName} message=${sanitize(t.message)}")
                 throw t
             }
         }
 
         override fun close() {
+            startThreadStopRequested.set(true)
             val created = commandServer ?: return
             commandServer = null
             created.javaClass.methods.firstOrNull { it.name == "closeService" && it.parameterCount == 0 }?.let { method ->
@@ -332,6 +367,8 @@ internal object LibboxRuntimeSupport {
         private fun platformInterface(): Class<*> = platform.javaClass.interfaces.firstOrNull { it.name == platformInterfaceClassName }
             ?: Class.forName(platformInterfaceClassName, false, classLoader)
     }
+
+    private const val COMMAND_SERVER_START_READY_WAIT_MS = 200L
 
     private data class CommandServerRuntimeCapabilities(
         val runtimeSupported: Boolean = false,
