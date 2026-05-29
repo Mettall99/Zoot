@@ -16,6 +16,14 @@ class ProtocolSchemeSelectorTest {
     }
 
     @Test
+    fun zoootconfDemoTokenWithResolvedOutlineProtocolSelectsOutlineShadowsocks() {
+        assertEquals(
+            ProtocolType.OUTLINE_SHADOWSOCKS,
+            ProtocolSchemeSelector.typeForResolvedConfig("zoootconf://demo-token", ProtocolType.OUTLINE_SHADOWSOCKS)
+        )
+    }
+
+    @Test
     fun unsupportedSchemeReturnsExplicitError() {
         val error = runCatching { ProtocolSchemeSelector.typeForConnectionString("trojan://example.com") }.exceptionOrNull()
 

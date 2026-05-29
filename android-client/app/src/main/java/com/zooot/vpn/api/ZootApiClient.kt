@@ -6,6 +6,7 @@ import com.zooot.vpn.selector.Proto
 import com.zooot.vpn.selector.ServerCandidate
 import com.zooot.vpn.selector.ServerProtocol
 import com.zooot.vpn.selector.ServerStatus
+import com.zooot.vpn.vpn.protocol.OutlineShadowsocksProtocolAdapter
 import android.util.Log
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
@@ -22,12 +23,18 @@ object ZootApiClient {
     
 
     private fun safeLogDebug(message: String) {
-        runCatching { Log.d(TAG, message) }
+        runCatching { Log.d(TAG, sanitizeForLogs(message)) }
     }
 
     val backendBaseUrl: String = BuildConfig.BACKEND_BASE_URL
 
     fun resolveToken(token: String, deviceId: String, deviceName: String, backendUrl: String = backendBaseUrl): ResolveTokenResult {
+        safeLogDebug("zoootconf resolve start")
+        if (token == DemoConfigResolver.DEMO_TOKEN) {
+            return DemoConfigResolver.resolveDemoToken().also {
+                safeLogDebug("zoootconf resolve success protocol=outline_shadowsocks")
+            }
+        }
         val body = buildResolveTokenBody(token, deviceId, deviceName)
         val response = postJson("$backendUrl/api/v1/config/resolve-token", body)
         return parseResult(response)
@@ -140,6 +147,11 @@ object ZootApiClient {
         }.getOrDefault(XraySafeFlags(false, false, false, false))
     }
 
+    private fun sanitizeForLogs(message: String): String = message
+        .replace(Regex("ss://[^\\s,;)]*", RegexOption.IGNORE_CASE), "ss://<redacted>")
+        .replace(Regex("(?i)(password|passwd|token)[=:/][^\\s,;)]*"), "${'$'}1=<redacted>")
+        .take(200)
+
     private fun protoFromApi(name: String): Proto? = when (name.lowercase()) {
         "amneziawg" -> Proto.AMNEZIAWG
         "xray_vless_reality" -> Proto.XRAY_VLESS_REALITY
@@ -169,3 +181,50 @@ data class ResolveTokenResult(
     val tariffTitle: String,
     val servers: List<ServerCandidate>
 )
+
+
+class DemoConfigUnavailableException(message: String = DemoConfigResolver.NOT_CONFIGURED_MESSAGE) : IllegalStateException(message)
+
+object DemoConfigResolver {
+    const val DEMO_TOKEN = "demo-token"
+    const val NOT_CONFIGURED_MESSAGE = "Outline Shadowsocks server is not configured"
+    private const val CONFIG_SOURCE = "zoootconf_demo"
+
+    fun resolveDemoToken(demoSsUri: String = BuildConfig.ZOOOT_DEMO_SS_URI): ResolveTokenResult {
+        val ssUri = demoSsUri.trim()
+        val available = ssUri.isNotBlank() && OutlineShadowsocksProtocolAdapter.tryParseConfig(ssUri).isSuccess
+        safeLogAvailability(available)
+        if (!available) throw DemoConfigUnavailableException()
+
+        return ResolveTokenResult(
+            preferredCountry = "Outline",
+            userEmail = "demo@zooot.local",
+            tariffTitle = "Outline Shadowsocks demo",
+            servers = listOf(
+                ServerCandidate(
+                    serverId = "outline-shadowsocks-demo",
+                    country = "Outline",
+                    status = ServerStatus.ONLINE,
+                    loadPercent = 0,
+                    latencyMs = 0,
+                    protocols = listOf(
+                        ServerProtocol(
+                            type = Proto.OUTLINE_SHADOWSOCKS,
+                            health = HealthStatus.HEALTHY,
+                            configUrl = "",
+                            config = ssUri,
+                            port = null,
+                            configSource = CONFIG_SOURCE
+                        )
+                    ),
+                    city = "Shadowsocks",
+                    serverIp = "<redacted>"
+                )
+            )
+        )
+    }
+
+    private fun safeLogAvailability(available: Boolean) {
+        runCatching { Log.d("ZootApiClient", "outline shadowsocks config available=$available") }
+    }
+}
