@@ -4,8 +4,6 @@ import android.util.Log
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -292,8 +290,6 @@ internal object LibboxRuntimeSupport {
                 commandServerClass.getConstructor(handlerInterface, platformInterface).newInstance(handler, platform)
             }
             commandServer = created
-            val entered = CountDownLatch(1)
-            val returned = CountDownLatch(1)
             val startMethod = created.javaClass.getMethod("start")
             logger("commandServer start thread launching")
             startThreadStopRequested.set(false)
@@ -301,7 +297,6 @@ internal object LibboxRuntimeSupport {
             startThread = Thread({
                 try {
                     logger("commandServer start entered")
-                    entered.countDown()
                     startMethod.invokeOrThrow(created)
                     logger("commandServer start returned")
                 } catch (t: Throwable) {
@@ -309,20 +304,21 @@ internal object LibboxRuntimeSupport {
                         startThreadFailure.set(t)
                         logger("commandServer start exception class=${t::class.java.simpleName} message=${sanitize(t.message)}")
                     }
-                } finally {
-                    entered.countDown()
-                    returned.countDown()
                 }
             }, "zooot-libbox-command-server")
                 .also { thread ->
                     thread.isDaemon = true
+                    logger("commandServer start thread launched")
                     thread.start()
                 }
-            entered.await(COMMAND_SERVER_START_READY_WAIT_MS, TimeUnit.MILLISECONDS)
-            returned.await(COMMAND_SERVER_START_READY_WAIT_MS, TimeUnit.MILLISECONDS)
+            logger("commandServer readiness wait begin")
+            Thread.sleep(COMMAND_SERVER_START_READY_WAIT_MS)
+            logger("commandServer readiness wait end")
             startThreadFailure.get()?.let { throw it }
 
+            logger("startOrReloadService preparing")
             val overrideOptions = overrideOptionsClass.getDeclaredConstructor().newInstance()
+            logger("OverrideOptions object created")
             logger("startOrReloadService called")
             try {
                 created.javaClass.getMethod("startOrReloadService", String::class.java, overrideOptionsClass)
