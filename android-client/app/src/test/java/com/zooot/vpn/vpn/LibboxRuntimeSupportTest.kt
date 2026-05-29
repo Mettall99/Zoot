@@ -192,9 +192,39 @@ class LibboxRuntimeSupportTest {
         assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.startOrReloadCalls)
         assertEquals(1, openTunCalls)
         assertTrue(logs.contains("commandServer start thread launching"))
+        assertTrue(logs.contains("commandServer start thread launched"))
         assertTrue(logs.contains("commandServer start entered"))
+        assertTrue(logs.contains("commandServer readiness wait begin"))
+        assertTrue(logs.contains("commandServer readiness wait end"))
+        assertTrue(logs.contains("startOrReloadService preparing"))
+        assertTrue(logs.contains("OverrideOptions object created"))
         assertTrue(logs.contains("startOrReloadService called"))
+        assertTrue(logs.contains("startOrReloadService success"))
         runtime.close()
+    }
+
+
+    @Test
+    fun commandServerBlockingStart_setsRunningTrueOnlyAfterStartOrReloadSuccess() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        io.nekohasekai.libbox.CommandRuntimeState.blockStartUntilClose = true
+        var openTunCalls = 0
+
+        ZootVpnService.startRuntimeForTest {
+            LibboxRuntimeSupport.start(
+                "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+                platformProxy { openTunCalls++ },
+                io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+                logger = {},
+                libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+            )
+        }
+
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.startOrReloadCalls)
+        assertEquals(1, openTunCalls)
+        assertTrue(ZootVpnService.isRealityRunning())
+        assertEquals(null, ZootVpnService.lastRealityError())
+        io.nekohasekai.libbox.CommandRuntimeState.releaseStart()
     }
 
     @Test
