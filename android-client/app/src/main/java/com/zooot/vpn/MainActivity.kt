@@ -22,6 +22,7 @@ import com.zooot.vpn.api.ResolveTokenResult
 import com.zooot.vpn.api.ZootApiClient
 import com.zooot.vpn.deeplink.DeepLinkParser
 import com.zooot.vpn.vpn.protocol.FakeVpnProtocolAdapter
+import com.zooot.vpn.vpn.protocol.OutlineShadowsocksProtocolAdapter
 import com.zooot.vpn.vpn.protocol.ProtocolType
 import com.zooot.vpn.vpn.protocol.VpnConfig
 import com.zooot.vpn.vpn.protocol.VpnProtocolAdapter
@@ -41,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     }
     private lateinit var wireGuardAdapter: WireGuardProtocolAdapter
     private lateinit var xrayRealityAdapter: XrayRealityProtocolAdapter
+    private lateinit var outlineShadowsocksAdapter: OutlineShadowsocksProtocolAdapter
     private val fakeAdapter = FakeVpnProtocolAdapter(ProtocolType.AMNEZIAWG)
     private var selectedServer: UiServer? = null
     private var selectedProtocol: UiProtocolOption? = null
@@ -79,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "vpn permission denied")
             pendingVpnPermissionConnect = false
             setConnecting(false)
-            showError("Для подключения нужно разрешение VPN")
+            showError("VPN permission is required")
         }
     }
 
@@ -88,6 +90,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         wireGuardAdapter = WireGuardProtocolAdapter(this)
         xrayRealityAdapter = XrayRealityProtocolAdapter(this)
+        outlineShadowsocksAdapter = OutlineShadowsocksProtocolAdapter(this)
         trafficProvider = NoopTrafficStatsProvider
         bindViews()
         setupActions()
@@ -135,6 +138,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun submitLink(rawLink: String, source: String) {
+        if (rawLink.trim().startsWith("ss://", ignoreCase = true)) {
+            submitShadowsocksLink(rawLink.trim())
+            return
+        }
+        if (rawLink.trim().startsWith("vless://", ignoreCase = true)) {
+            submitVlessLink(rawLink.trim())
+            return
+        }
         val parsed = LinkInputParser.validate(rawLink)
         if (!parsed.valid) {
             linkInputLayout.error = parsed.error
@@ -146,6 +157,65 @@ class MainActivity : AppCompatActivity() {
         val token = parsed.token!!
         Log.d(TAG, "manual token extracted")
         loadConfigFromToken(token)
+    }
+
+    private fun submitShadowsocksLink(rawLink: String) {
+        clearError()
+        val parsed = OutlineShadowsocksProtocolAdapter.tryParseConfig(rawLink)
+        if (parsed.isFailure) {
+            val message = parsed.exceptionOrNull()?.message ?: OutlineShadowsocksProtocolAdapter.INVALID_LINK_MESSAGE
+            linkInputLayout.error = message
+            showError(message)
+            return
+        }
+        linkInputLayout.error = null
+        val ss = parsed.getOrThrow()
+        Log.d(TAG, "protocol selected=outline_shadowsocks server=${OutlineShadowsocksProtocolAdapter.maskedHost(ss.host)} port=${ss.port} method=${ss.method}")
+        val server = UiServer(
+            id = ss.name ?: "outline-shadowsocks",
+            country = "Outline",
+            city = ss.name ?: "Shadowsocks",
+            serverIp = OutlineShadowsocksProtocolAdapter.maskedHost(ss.host),
+            loadPercent = 0,
+            latencyMs = 0,
+            online = true,
+            wireGuardConfig = null,
+            wireGuardConfigSource = null,
+            xrayRealityConfig = null,
+            xrayRealityConfigSource = null,
+            outlineShadowsocksConfig = rawLink,
+            outlineShadowsocksConfigSource = "manual_ss_uri"
+        )
+        selectedServer = server
+        selectedProtocol = UiProtocolOption.outlineShadowsocks(rawLink, "manual_ss_uri")
+        showConnectionScreen()
+    }
+
+    private fun submitVlessLink(rawLink: String) {
+        clearError()
+        if (XrayRealityProtocolAdapter.parseConfig(rawLink) == null) {
+            linkInputLayout.error = "Invalid VLESS Reality link"
+            showError("Invalid VLESS Reality link")
+            return
+        }
+        linkInputLayout.error = null
+        Log.d(TAG, "protocol selected=xray_vless_reality")
+        val server = UiServer(
+            id = "vless-reality",
+            country = "VLESS",
+            city = "Reality",
+            serverIp = "<redacted>",
+            loadPercent = 0,
+            latencyMs = 0,
+            online = true,
+            wireGuardConfig = null,
+            wireGuardConfigSource = null,
+            xrayRealityConfig = rawLink,
+            xrayRealityConfigSource = "manual_vless_uri"
+        )
+        selectedServer = server
+        selectedProtocol = UiProtocolOption.xrayReality(rawLink, "manual_vless_uri")
+        showConnectionScreen()
     }
 
     private fun loadConfigFromToken(token: String) {
@@ -213,6 +283,7 @@ class MainActivity : AppCompatActivity() {
         protocolsList.removeAllViews()
         listOf(
             UiProtocolOption.wireguard(server.wireGuardConfig, server.wireGuardConfigSource),
+            UiProtocolOption.outlineShadowsocks(server.outlineShadowsocksConfig, server.outlineShadowsocksConfigSource),
             UiProtocolOption.xrayReality(server.xrayRealityConfig, server.xrayRealityConfigSource),
             UiProtocolOption.disabled("AmneziaWG", ProtocolType.AMNEZIAWG),
             UiProtocolOption.disabled("OpenVPN UDP", ProtocolType.OPENVPN_UDP),
@@ -237,7 +308,7 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "vpn permission check")
         val intent = VpnService.prepare(this)
         if (intent != null) {
-            Log.d(TAG, "vpn permission required")
+            Log.d(TAG, "VPN permission is required")
             pendingVpnPermissionConnect = true
             setConnecting(true)
             launchVpnPermission(intent)
@@ -307,6 +378,7 @@ class MainActivity : AppCompatActivity() {
     private fun adapterFor(protocol: UiProtocolOption): VpnProtocolAdapter = when (protocol.type) {
         ProtocolType.WIREGUARD -> wireGuardAdapter
         ProtocolType.XRAY_VLESS_REALITY -> xrayRealityAdapter
+        ProtocolType.OUTLINE_SHADOWSOCKS -> outlineShadowsocksAdapter
         else -> fakeAdapter
     }
 
@@ -391,12 +463,16 @@ class MainActivity : AppCompatActivity() {
 }
 
 sealed class AppUiState { object StartState: AppUiState(); object ServerSelectionState: AppUiState(); object ConnectionSetupState: AppUiState(); object ConnectedState: AppUiState() }
-data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?, val wireGuardConfigSource: String?, val xrayRealityConfig: String? = null, val xrayRealityConfigSource: String? = null) {
-    fun hasAnyConnectableConfig(): Boolean = hasValidConfig(wireGuardConfig) || hasValidConfig(xrayRealityConfig)
-    fun preferredProtocolOption(): UiProtocolOption = if (hasValidConfig(wireGuardConfig)) UiProtocolOption.wireguard(wireGuardConfig, wireGuardConfigSource) else UiProtocolOption.xrayReality(xrayRealityConfig, xrayRealityConfigSource)
+data class UiServer(val id: String, val country: String, val city: String, val serverIp: String, val loadPercent: Int, val latencyMs: Int, val online: Boolean, val wireGuardConfig: String?, val wireGuardConfigSource: String?, val xrayRealityConfig: String? = null, val xrayRealityConfigSource: String? = null, val outlineShadowsocksConfig: String? = null, val outlineShadowsocksConfigSource: String? = null) {
+    fun hasAnyConnectableConfig(): Boolean = hasValidConfig(wireGuardConfig) || hasValidConfig(outlineShadowsocksConfig) || hasValidConfig(xrayRealityConfig)
+    fun preferredProtocolOption(): UiProtocolOption = when {
+        hasValidConfig(wireGuardConfig) -> UiProtocolOption.wireguard(wireGuardConfig, wireGuardConfigSource)
+        hasValidConfig(outlineShadowsocksConfig) -> UiProtocolOption.outlineShadowsocks(outlineShadowsocksConfig, outlineShadowsocksConfigSource)
+        else -> UiProtocolOption.xrayReality(xrayRealityConfig, xrayRealityConfigSource)
+    }
     private fun hasValidConfig(config: String?): Boolean = !config.isNullOrBlank() && config.trim().lowercase() != "null"
 }
-data class UiProtocolOption(val name: String, val type: ProtocolType, val enabled: Boolean, val config: String?, val configSource: String?) { companion object { fun wireguard(config: String?, source: String?) = UiProtocolOption("WireGuard", ProtocolType.WIREGUARD, isValidConfig(config), config, source); fun xrayReality(config: String?, source: String?) = UiProtocolOption("VLESS Reality", ProtocolType.XRAY_VLESS_REALITY, isValidConfig(config), config, source); fun disabled(name: String, type: ProtocolType)=UiProtocolOption(name,type,false,null,null); private fun isValidConfig(config: String?) = !config.isNullOrBlank() && config.trim().lowercase() != "null" } }
+data class UiProtocolOption(val name: String, val type: ProtocolType, val enabled: Boolean, val config: String?, val configSource: String?) { companion object { fun wireguard(config: String?, source: String?) = UiProtocolOption("WireGuard", ProtocolType.WIREGUARD, isValidConfig(config), config, source); fun xrayReality(config: String?, source: String?) = UiProtocolOption("VLESS Reality", ProtocolType.XRAY_VLESS_REALITY, isValidConfig(config), config, source); fun outlineShadowsocks(config: String?, source: String?) = UiProtocolOption("Outline Shadowsocks", ProtocolType.OUTLINE_SHADOWSOCKS, isValidConfig(config), config, source); fun disabled(name: String, type: ProtocolType)=UiProtocolOption(name,type,false,null,null); private fun isValidConfig(config: String?) = !config.isNullOrBlank() && config.trim().lowercase() != "null" } }
 data class ConnectionSession(val server: UiServer, val protocol: String, val startedAtMs: Long)
 
 data class LinkValidationResult(val valid: Boolean, val token: String? = null, val error: String? = null)
@@ -415,7 +491,7 @@ object LinkFlowContract {
 }
 object ServerRecommendation { fun pick(servers: List<UiServer>): UiServer? = servers.filter { it.online && it.hasAnyConnectableConfig() }.sortedWith(compareBy<UiServer>{it.loadPercent}.thenBy{it.latencyMs}).firstOrNull() ?: servers.firstOrNull() }
 object TimerFormatter { fun formatElapsed(ms: Long): String { val total = ms/1000; val h=total/3600; val m=(total%3600)/60; val s=total%60; return "%02d:%02d:%02d".format(h,m,s) } }
-object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate): UiServer { val wg = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; val xray = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.XRAY_VLESS_REALITY && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; return UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,wg?.config,wg?.configSource,xray?.config,xray?.configSource) } }
+object UiMapper { fun toUiServer(s: com.zooot.vpn.selector.ServerCandidate): UiServer { val wg = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.WIREGUARD && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; val xray = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.XRAY_VLESS_REALITY && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; val outline = s.protocols.firstOrNull{it.type==com.zooot.vpn.selector.Proto.OUTLINE_SHADOWSOCKS && it.health!=com.zooot.vpn.selector.HealthStatus.FAILED}; return UiServer(s.serverId,s.country,s.city,s.serverIp,s.loadPercent,s.latencyMs,s.status==com.zooot.vpn.selector.ServerStatus.ONLINE,wg?.config,wg?.configSource,xray?.config,xray?.configSource,outline?.config,outline?.configSource) } }
 
 data class TrafficStats(val rx: String, val tx: String)
 interface VpnTrafficStatsProvider { fun read(): TrafficStats }
