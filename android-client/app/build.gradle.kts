@@ -63,10 +63,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     // Runtime is loaded reflectively from an official/current sing-box libbox AAR.
     // Place the generated AAR at app/libs/sing-box-libbox.aar; the old net.clever-vpn AAR is intentionally not used.
-    val singBoxLibboxAar = file("libs/sing-box-libbox.aar")
-    if (singBoxLibboxAar.exists()) {
-        implementation(files(singBoxLibboxAar))
-    }
+    implementation(files("libs/sing-box-libbox.aar"))
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")

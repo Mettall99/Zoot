@@ -29,7 +29,7 @@ internal object LibboxRuntimeSupport {
         val libboxClass = runCatching { Class.forName(libboxClassName, false, classLoader) }
             .getOrElse { return LibboxRuntimeInspection(false, null, emptyList(), false, false, false, null, "${it::class.java.simpleName}: ${sanitize(it.message)}") }
         val version = runCatching { libboxClass.noArgMethod("version")?.invokeStaticOrThrow()?.toString() }.getOrNull()
-        val diagnostics = publicMethodDiagnostics(classLoader, libboxClass, commandServerClassName)
+        val diagnostics = publicMethodDiagnostics(classLoader, libboxClass, boxServiceClassName, commandServerClassName)
         val boxServiceClass = runCatching { Class.forName(boxServiceClassName, false, classLoader) }.getOrNull()
         val commandServerClass = runCatching { Class.forName(commandServerClassName, false, classLoader) }.getOrNull()
         val commandDiagnosticSupported = commandServerDiagnosticSupported(
@@ -152,9 +152,15 @@ internal object LibboxRuntimeSupport {
                 commandServer.isAssignableFrom(method.returnType)
         }
 
-    private fun publicMethodDiagnostics(classLoader: ClassLoader?, libboxClass: Class<*>, commandServerClassName: String): List<LibboxMethodDiagnostic> {
+    private fun publicMethodDiagnostics(
+        classLoader: ClassLoader?,
+        libboxClass: Class<*>,
+        boxServiceClassName: String,
+        commandServerClassName: String
+    ): List<LibboxMethodDiagnostic> {
         val classes = listOfNotNull(
             libboxClass,
+            runCatching { Class.forName(boxServiceClassName, false, classLoader) }.getOrNull(),
             runCatching { Class.forName(commandServerClassName, false, classLoader) }.getOrNull(),
             runCatching { Class.forName(PLATFORM_INTERFACE_CLASS_NAME, false, classLoader) }.getOrNull()
         ).distinctBy { it.name }

@@ -147,6 +147,7 @@ class ZootVpnService : VpnService() {
             "usePlatformAutoDetectInterfaceControl" -> true
             "autoDetectInterfaceControl" -> service.protect((args?.get(0) as Number).toInt()).let { Unit }
             "openTun" -> runCatching {
+                safeLogDebug("openTun called")
                 val fd = service.openTun(args?.get(0) ?: error("missing tun options"))
                 if (method.returnType == java.lang.Long.TYPE) fd.toLong() else fd
             }.getOrElse {
