@@ -5,16 +5,28 @@ object RuntimeCapableLibbox {
 }
 
 object CommandRuntimeState {
+    var throwOnStart: RuntimeException? = null
     var throwOnStartOrReload: RuntimeException? = null
+    var blockStartUntilClose = false
     var closeServiceCalls = 0
     var closeCalls = 0
+    var startCalls = 0
     var startOrReloadCalls = 0
+    var openTunCalls = 0
+    private var startGate = java.util.concurrent.CountDownLatch(1)
     fun reset() {
+        throwOnStart = null
         throwOnStartOrReload = null
+        blockStartUntilClose = false
         closeServiceCalls = 0
         closeCalls = 0
+        startCalls = 0
         startOrReloadCalls = 0
+        openTunCalls = 0
+        startGate = java.util.concurrent.CountDownLatch(1)
     }
+    fun releaseStart() = startGate.countDown()
+    fun awaitStartRelease() = startGate.await()
 }
 
 object CommandServerOnlyLibbox {
@@ -62,18 +74,24 @@ class BoxService(private val config: String, private val platform: PlatformInter
 class CommandServer(private val handler: CommandServerHandler, private val platform: PlatformInterface) {
     var started = false
     var serviceStarted = false
-    fun start() { started = true }
+    fun start() {
+        CommandRuntimeState.startCalls++
+        CommandRuntimeState.throwOnStart?.let { throw it }
+        started = true
+        if (CommandRuntimeState.blockStartUntilClose) CommandRuntimeState.awaitStartRelease()
+    }
     fun startOrReloadService(config: String, options: OverrideOptions) {
         check(started) { "command server was not started" }
         check(config.contains("tun-in")) { "config missing tun inbound" }
         CommandRuntimeState.startOrReloadCalls++
         CommandRuntimeState.throwOnStartOrReload?.let { throw it }
         platform.openTun(TunOptions())
+        CommandRuntimeState.openTunCalls++
         serviceStarted = true
     }
     fun needWIFIState(): Boolean = false
-    fun closeService() { CommandRuntimeState.closeServiceCalls++; serviceStarted = false }
-    fun close() { CommandRuntimeState.closeCalls++; started = false }
+    fun closeService() { CommandRuntimeState.closeServiceCalls++; serviceStarted = false; CommandRuntimeState.releaseStart() }
+    fun close() { CommandRuntimeState.closeCalls++; started = false; CommandRuntimeState.releaseStart() }
 }
 
 class CommandServerWithoutReload(private val handler: CommandServerHandler, private val platform: PlatformInterface) {
