@@ -19,34 +19,39 @@ class LibboxRuntimeSupportTest {
     }
 
     @Test
-    fun inspect_reportsCommandServerOnlyAsDiagnosticNotRuntime() {
+    fun inspect_reportsCommandServerRuntimeSupported_whenCommandServerCanStartServiceAndOpenTun() {
         val inspection = LibboxRuntimeSupport.inspect(
             io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
             io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
         )
 
         assertTrue(inspection.libboxPresent)
-        assertEquals("1.13.12-command-only-test", inspection.version)
+        assertEquals("1.13.12-command-runtime-test", inspection.version)
         assertTrue(inspection.commandServerPresent)
-        assertFalse(inspection.runtimeSupported)
-        assertEquals(null, inspection.backendName)
-        assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_ONLY_MESSAGE, inspection.unsupportedReason)
+        assertTrue(inspection.commandServerStartOrReloadPresent)
+        assertTrue(inspection.platformOpenTunPresent)
+        assertTrue(inspection.runtimeSupported)
+        assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_BACKEND, inspection.backendName)
+        assertEquals(null, inspection.unsupportedReason)
     }
 
     @Test
-    fun start_throwsCommandServerOnlyUnsupportedCoreError_andDoesNotReportSuccess() {
-        val platform = platformProxy()
-        val error = assertFailsWith<IllegalStateException> {
-            LibboxRuntimeSupport.start(
-                "{}",
-                platform,
-                io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
-                logger = {},
-                libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
-            )
-        }
+    fun start_usesCommandServerRuntime_andReportsStartedOnlyAfterStartOrReloadSucceeds() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        var openTunCalls = 0
+        val runtime = LibboxRuntimeSupport.start(
+            "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+            platformProxy { openTunCalls++ },
+            io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+            logger = {},
+            libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+        )
 
-        assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_ONLY_MESSAGE, error.message)
+        runtime.start()
+
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.startOrReloadCalls)
+        assertEquals(1, openTunCalls)
+        runtime.close()
     }
 
     @Test
@@ -119,21 +124,69 @@ class LibboxRuntimeSupportTest {
     }
 
     @Test
-    fun unsupportedRuntimeIsKnownImmediatelyWithoutCreatingTun() {
-        var openTunCalls = 0
-        val platform = platformProxy { openTunCalls++ }
+    fun inspect_reportsUnsupported_whenCommandServerLacksStartOrReloadService() {
+        val inspection = LibboxRuntimeSupport.inspect(
+            io.nekohasekai.libbox.CommandServerWithoutReloadLibbox::class.java.classLoader,
+            io.nekohasekai.libbox.CommandServerWithoutReloadLibbox::class.java.name,
+            commandServerClassName = io.nekohasekai.libbox.CommandServerWithoutReload::class.java.name
+        )
 
-        assertFailsWith<IllegalStateException> {
+        assertFalse(inspection.commandServerStartOrReloadPresent)
+        assertTrue(inspection.platformOpenTunPresent)
+        assertFalse(inspection.runtimeSupported)
+        assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_ONLY_MESSAGE, inspection.unsupportedReason)
+    }
+
+    @Test
+    fun inspect_reportsUnsupported_whenPlatformInterfaceLacksOpenTun() {
+        val inspection = LibboxRuntimeSupport.inspect(
+            CommandServerNoOpenTunLibbox::class.java.classLoader,
+            CommandServerNoOpenTunLibbox::class.java.name,
+            commandServerClassName = CommandServerNoOpenTun::class.java.name,
+            platformInterfaceClassName = NoOpenTunPlatformInterface::class.java.name
+        )
+
+        assertTrue(inspection.commandServerStartOrReloadPresent)
+        assertFalse(inspection.platformOpenTunPresent)
+        assertFalse(inspection.runtimeSupported)
+        assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_ONLY_MESSAGE, inspection.unsupportedReason)
+    }
+
+    @Test
+    fun commandServerStartOrReloadFailure_setsLastRealityError_andDoesNotReportRunning() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        io.nekohasekai.libbox.CommandRuntimeState.throwOnStartOrReload = IllegalStateException("boom from startOrReloadService")
+
+        ZootVpnService.startRuntimeForTest {
             LibboxRuntimeSupport.start(
-                "{}",
-                platform,
+                "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+                platformProxy(),
                 io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
                 logger = {},
                 libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
             )
         }
 
-        assertEquals(0, openTunCalls)
+        assertFalse(ZootVpnService.isRealityRunning())
+        assertEquals("IllegalStateException: boom from startOrReloadService", ZootVpnService.lastRealityError())
+    }
+
+    @Test
+    fun commandServerStop_callsCloseServiceThenClose() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        val runtime = LibboxRuntimeSupport.start(
+            "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+            platformProxy(),
+            io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+            logger = {},
+            libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+        )
+
+        runtime.start()
+        runtime.close()
+
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.closeServiceCalls)
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.closeCalls)
     }
 
     @Test
