@@ -146,11 +146,13 @@ class ZootVpnService : VpnService() {
         override fun invoke(proxy: Any, method: Method, args: Array<out Any?>?): Any? = when (method.name) {
             "usePlatformAutoDetectInterfaceControl" -> true
             "autoDetectInterfaceControl" -> service.protect((args?.get(0) as Number).toInt()).let { Unit }
-            "openTun" -> runCatching { service.openTun(args?.get(0) ?: error("missing tun options")) }
-                .getOrElse {
-                    safeLogDebug("createTun failure ${LibboxRuntimeSupport.sanitize(it.message)}")
-                    throw IllegalStateException("openTun failed: ${LibboxRuntimeSupport.sanitize(it.message)}", it)
-                }
+            "openTun" -> runCatching {
+                val fd = service.openTun(args?.get(0) ?: error("missing tun options"))
+                if (method.returnType == java.lang.Long.TYPE) fd.toLong() else fd
+            }.getOrElse {
+                safeLogDebug("createTun failure ${LibboxRuntimeSupport.sanitize(it.message)}")
+                throw IllegalStateException("openTun failed: ${LibboxRuntimeSupport.sanitize(it.message)}", it)
+            }
             "useProcFS" -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
             "findConnectionOwner" -> newConnectionOwner(ProcessUid.INVALID)
             "packageNameByUid" -> packageNameByUid((args?.get(0) as Number).toInt())
@@ -190,7 +192,7 @@ class ZootVpnService : VpnService() {
             }
             callStringBox(options, "getDNSServerAddress")?.let { builder.addDnsServer(it) }
             builder.addDisallowedApplication(packageName)
-            val pfd = builder.establish() ?: error("VpnService.Builder.establish returned null")
+            val pfd = builder.establish() ?: error("VpnService.Builder.establish() returned null")
             safeLogDebug("tun fd created fd=${pfd.fd}")
             tunFd?.close()
             tunFd = pfd
@@ -389,6 +391,7 @@ class ZootVpnService : VpnService() {
             }
             val message = e.message.orEmpty()
             if (message.startsWith(LibboxRuntimeSupport.UNSUPPORTED_CORE_MESSAGE) ||
+                message.startsWith(LibboxRuntimeSupport.COMMAND_SERVER_ONLY_MESSAGE) ||
                 message.startsWith("NoSuchMethodException:") ||
                 message.startsWith("InvocationTargetException cause:") ||
                 message.startsWith("openTun failed:") ||
