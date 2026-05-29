@@ -171,6 +171,105 @@ class LibboxRuntimeSupportTest {
         assertEquals("IllegalStateException: boom from startOrReloadService", ZootVpnService.lastRealityError())
     }
 
+
+    @Test
+    fun commandServerBlockingStart_doesNotBlockStartOrReloadService() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        io.nekohasekai.libbox.CommandRuntimeState.blockStartUntilClose = true
+        var openTunCalls = 0
+        val logs = mutableListOf<String>()
+        val runtime = LibboxRuntimeSupport.start(
+            "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+            platformProxy { openTunCalls++ },
+            io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+            logger = { logs += it },
+            libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+        )
+
+        runtime.start()
+
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.startCalls)
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.startOrReloadCalls)
+        assertEquals(1, openTunCalls)
+        assertTrue(logs.contains("commandServer start thread launching"))
+        assertTrue(logs.contains("commandServer start entered"))
+        assertTrue(logs.contains("startOrReloadService called"))
+        runtime.close()
+    }
+
+    @Test
+    fun commandServerStartOrReloadSuccess_setsRunningTrue() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+
+        ZootVpnService.startRuntimeForTest {
+            LibboxRuntimeSupport.start(
+                "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+                platformProxy(),
+                io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+                logger = {},
+                libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+            )
+        }
+
+        assertTrue(ZootVpnService.isRealityRunning())
+        assertEquals(null, ZootVpnService.lastRealityError())
+    }
+
+    @Test
+    fun commandServerStartBackgroundFailure_setsLastRealityError_andSkipsStartOrReload() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        io.nekohasekai.libbox.CommandRuntimeState.throwOnStart = IllegalStateException("boom from commandServer start")
+
+        ZootVpnService.startRuntimeForTest {
+            LibboxRuntimeSupport.start(
+                "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+                platformProxy(),
+                io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+                logger = {},
+                libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+            )
+        }
+
+        assertFalse(ZootVpnService.isRealityRunning())
+        assertEquals(0, io.nekohasekai.libbox.CommandRuntimeState.startOrReloadCalls)
+        assertEquals("IllegalStateException: boom from commandServer start", ZootVpnService.lastRealityError())
+    }
+
+    @Test
+    fun awaitRealityRunning_waitsForDelayedStartupInsteadOfImmediateTimeout() {
+        ZootVpnService.resetRealityStateForTest()
+        val starter = Thread {
+            Thread.sleep(250)
+            ZootVpnService.startRuntimeForTest { RecordingRuntime() }
+        }
+
+        starter.start()
+        val running = ZootVpnService.awaitRealityRunning(2_000)
+        starter.join()
+
+        assertTrue(running)
+        assertTrue(ZootVpnService.isRealityRunning())
+    }
+
+    @Test
+    fun commandServerStartOrReload_invokesOpenTunBeforeReportingRunning() {
+        io.nekohasekai.libbox.CommandRuntimeState.reset()
+        var openTunCalls = 0
+
+        ZootVpnService.startRuntimeForTest {
+            LibboxRuntimeSupport.start(
+                "{\"inbounds\":[{\"tag\":\"tun-in\"}]}",
+                platformProxy { openTunCalls++ },
+                io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.classLoader,
+                logger = {},
+                libboxClassName = io.nekohasekai.libbox.CommandServerOnlyLibbox::class.java.name
+            )
+        }
+
+        assertEquals(1, io.nekohasekai.libbox.CommandRuntimeState.startOrReloadCalls)
+        assertEquals(1, openTunCalls)
+        assertTrue(ZootVpnService.isRealityRunning())
+    }
     @Test
     fun commandServerStop_callsCloseServiceThenClose() {
         io.nekohasekai.libbox.CommandRuntimeState.reset()

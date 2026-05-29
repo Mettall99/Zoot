@@ -180,7 +180,7 @@ class ZootVpnService : VpnService() {
         }
 
         private fun ZootVpnService.openTun(options: Any): Int {
-            safeLogDebug("createTun begin")
+            safeLogDebug("createTun start")
             val mtu = callInt(options, "getMTU", 0)
             val builder = Builder().setSession("Zooot VPN")
             if (mtu > 0) builder.setMtu(mtu)
@@ -386,6 +386,13 @@ class ZootVpnService : VpnService() {
             startRuntimeSafely(runtimeFactory, onFailureCleanup = {})
         }
 
+        internal fun resetRealityStateForTest() {
+            startLatch.set(CountDownLatch(0))
+            stopLatch.set(CountDownLatch(0))
+            lastError.set(null)
+            running.set(false)
+        }
+
         private fun setStoppedState(message: String?) {
             lastError.set(message)
             running.set(false)
@@ -437,7 +444,16 @@ class ZootVpnService : VpnService() {
             return "${e::class.java.simpleName}: ${LibboxRuntimeSupport.sanitize(e.message)}"
         }
 
-        fun awaitRealityRunning(timeoutMs: Long): Boolean = startLatch.get().await(timeoutMs, TimeUnit.MILLISECONDS) && running.get()
+        fun awaitRealityRunning(timeoutMs: Long): Boolean {
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            while (System.nanoTime() < deadline) {
+                if (running.get()) return true
+                if (lastError.get() != null) return false
+                val remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).coerceAtLeast(1L)
+                startLatch.get().await(remainingMs.coerceAtMost(100L), TimeUnit.MILLISECONDS)
+            }
+            return running.get()
+        }
         fun awaitRealityStopped(timeoutMs: Long): Boolean = stopLatch.get().await(timeoutMs, TimeUnit.MILLISECONDS) && !running.get()
         fun isRealityRunning(): Boolean = running.get()
         fun lastRealityError(): String? = lastError.get()
