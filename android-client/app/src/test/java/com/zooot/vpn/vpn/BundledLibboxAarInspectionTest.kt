@@ -11,7 +11,7 @@ import java.util.zip.ZipFile
 
 class BundledLibboxAarInspectionTest {
     @Test
-    fun bundledSingBoxLibboxAar_exposesRealRuntimeOrExplicitCommandServerOnlyError() {
+    fun bundledSingBoxLibboxAar_exposesSupportedRuntimeOrExplicitUnsupportedShape() {
         val aar = bundledAar()
         assumeTrue("android-client/app/libs/sing-box-libbox.aar is not present in this checkout", aar.isFile)
 
@@ -25,20 +25,22 @@ class BundledLibboxAarInspectionTest {
 
             assertTrue("AAR classes.jar must contain io.nekohasekai.libbox.Libbox", inspection.libboxPresent)
             assertTrue(
-                "AAR must expose either a real BoxService/newService runtime or CommandServer diagnostics",
-                inspection.runtimeSupported || inspection.commandServerPresent
+                "AAR must expose a supported BoxService or CommandServer service runtime",
+                inspection.runtimeSupported
             )
 
-            if (inspection.runtimeSupported) {
-                assertEquals(LibboxRuntimeSupport.BOX_SERVICE_BACKEND, inspection.backendName)
+            if (inspection.backendName == LibboxRuntimeSupport.BOX_SERVICE_BACKEND) {
                 assertTrue(diagnostics.contains("io.nekohasekai.libbox.Libbox static newService"))
                 assertTrue(diagnostics.contains("io.nekohasekai.libbox.PlatformInterface openTun"))
                 assertTrue(diagnostics.contains("io.nekohasekai.libbox.BoxService start()"))
                 assertTrue(diagnostics.contains("io.nekohasekai.libbox.BoxService close()"))
             } else {
-                assertFalse("CommandServer must not be treated as Android VPN/TUN runtime", inspection.runtimeSupported)
-                assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_ONLY_MESSAGE, inspection.unsupportedReason)
-                assertTrue(diagnostics.contains("io.nekohasekai.libbox.CommandServer"))
+                assertEquals(LibboxRuntimeSupport.COMMAND_SERVER_BACKEND, inspection.backendName)
+                assertTrue(inspection.commandServerStartOrReloadPresent)
+                assertTrue(inspection.platformOpenTunPresent)
+                assertTrue(diagnostics.contains("io.nekohasekai.libbox.Libbox static newCommandServer"))
+                assertTrue(diagnostics.contains("io.nekohasekai.libbox.CommandServer startOrReloadService"))
+                assertTrue(diagnostics.contains("io.nekohasekai.libbox.PlatformInterface openTun"))
             }
         }
     }

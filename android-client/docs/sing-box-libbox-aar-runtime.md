@@ -3,35 +3,55 @@
 `android-client/app/libs/sing-box-libbox.aar` is the only supported Android
 libbox dependency for the Reality VPN runtime. The older
 `net.clever-vpn:libbox-android` dependency must not be used because it can expose
-only the sing-box command/diagnostic surface and not a `VpnService`/TUN runtime.
+only a command/diagnostic surface without the Android `VpnService`/TUN hooks that
+Zooot needs.
 
 ## Required Android VPN/TUN API
 
-Zooot treats libbox as runtime-capable only when `classes.jar` exposes all of the
-following public API shape in package `io.nekohasekai.libbox`:
+Zooot treats libbox as runtime-capable when `classes.jar` exposes either of these
+public API shapes in package `io.nekohasekai.libbox`.
+
+### CommandServer service runtime
+
+This is the supported shape for the currently bundled AAR:
+
+- `Libbox.newCommandServer(CommandServerHandler, PlatformInterface): CommandServer`.
+- `CommandServer.start()`.
+- `CommandServer.startOrReloadService(String, OverrideOptions)`.
+- `CommandServer.closeService()` or `CommandServer.close()`.
+- `PlatformInterface.openTun(TunOptions)` returning `int` or `long`.
+
+Zooot starts this backend by creating the command server, calling `start()`, then
+calling `startOrReloadService(config, OverrideOptions)`. The VPN is considered
+running only after `startOrReloadService(...)` returns successfully and libbox can
+call `PlatformInterface.openTun(TunOptions)` to create the Android TUN with
+`VpnService.Builder.establish()`.
+
+### Direct BoxService runtime
+
+A future AAR may instead expose this direct service shape, which remains a valid
+alternative backend:
 
 - `Libbox.newService(String, PlatformInterface): BoxService`, or a public
   `BoxService(String, PlatformInterface)` constructor.
 - `BoxService.start()` and `BoxService.close()`.
 - `PlatformInterface.openTun(TunOptions)` returning `int` or `long`.
 
-`CommandServer`, `newCommandServer(...)`, `startOrReloadService(...)`, and related
-classes are diagnostic/control APIs only. They are not a replacement for the
-Android `VpnService`/TUN runtime and must never be used as a fallback backend.
-
 ## Inspection workflow
 
 If `android-client/app/libs/sing-box-libbox.aar` is missing, there is no local AAR
 payload to unpack and no `classes.jar` to inspect. In that case the runtime code
-keeps the explicit unsupported-runtime error when only `CommandServer` is present:
+keeps an explicit unsupported-runtime error for incomplete command-server shapes,
+such as missing `startOrReloadService(...)` or missing
+`PlatformInterface.openTun(TunOptions)`:
 
 `Bundled libbox exposes CommandServer only, but no Android VPN/TUN runtime API is available`
 
 When the AAR is present, run the unit test
-`BundledLibboxAarInspectionTest.bundledSingBoxLibboxAar_exposesRealRuntimeOrExplicitCommandServerOnlyError`.
+`BundledLibboxAarInspectionTest.bundledSingBoxLibboxAar_exposesSupportedRuntimeOrExplicitUnsupportedShape`.
 It unpacks the AAR, loads `classes.jar`, prints the discovered public method
-signatures, and verifies that `runtimeSupported=true` is set only for the real
-`BoxService`/`newService` + `PlatformInterface.openTun(...)` runtime API.
+signatures, and verifies that `runtimeSupported=true` is set for either the
+CommandServer service runtime or the direct BoxService runtime.
 
 ## APK packaging expectations
 

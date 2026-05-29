@@ -74,8 +74,8 @@ class XrayRealityProtocolAdapter(
 
         internal fun safeExceptionMessage(e: Throwable): String =
             e.message?.replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}"), "<redacted>")
-                ?.replace(Regex("(?i)(uuid|public_?key|short_?id|sid|token|private_?key|vless://)[^\\s,;)]*"), "\$1=<redacted>")
-                ?.replace(Regex("[A-Za-z0-9_-]{20,}"), "<redacted>")
+                ?.replace(Regex("(?i)(uuid|public_?key|short_?id|sid|token|private_?key|host|server_name|server|vless://)[^\\s,;)]*"), "\$1=<redacted>")
+                ?.replace(Regex("[A-Za-z0-9_-]{32,}"), "<redacted>")
                 ?.take(160)
                 ?: ""
 
